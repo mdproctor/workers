@@ -12,7 +12,7 @@ Integration-tier collection of CaseHub worker implementations. Each module provi
 
 **Design philosophy:** Thin wrappers — each worker module translates a CaseHub case step dispatch into the target runtime's protocol and fires `WorkflowExecutionCompleted` on `WORKER_EXECUTION_FINISHED` when done. No domain logic here.
 
-**Spec:** `docs/superpowers/specs/2026-06-08-casehub-workers-camel-design.md` — fully approved, 7 review cycles.
+**Spec:** `docs/specs/2026-06-08-casehub-workers-camel-design.md` — fully approved, 7 review cycles.
 
 ## Build Commands
 
@@ -236,7 +236,7 @@ Protocols live in `casehub/garden`. Do not write protocol files in this repo.
 
 | Skill | Writes to |
 |-------|-----------|
-| brainstorming (specs) | `docs/superpowers/specs/` |
+| brainstorming (specs) | `docs/specs/` |
 | writing-plans (plans) | workspace `plans/` |
 | handover | workspace `HANDOFF.md` |
 | idea-log | workspace `IDEAS.md` |
@@ -249,8 +249,8 @@ Protocols live in `casehub/garden`. Do not write protocol files in this repo.
 | Artifact   | Destination | Notes |
 |------------|-------------|-------|
 | adr        | project     | lands in `docs/adr/` |
-| blog       | workspace   | staged here; published via publish-blog |
-| specs      | project     | lands in `docs/superpowers/specs/` |
+| blog       | project     | lands in `docs/blog/` — promoted at work end |
+| specs      | project     | lands in `docs/specs/` |
 | plans      | workspace   | |
 | design     | project     | journal in workspace `design/`; merge target is project `ARC42STORIES.MD` |
 | handover   | workspace   | |

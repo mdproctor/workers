@@ -242,7 +242,7 @@ Protocols live in `casehub/garden`. Do not write protocol files in this repo.
 | idea-log | workspace `IDEAS.md` |
 | design-snapshot | workspace `snapshots/` |
 | adr | `docs/adr/` |
-| write-blog | workspace `blog/` |
+| write-blog | project | lands in docs/blog/ — promoted at work end `blog/` |
 
 ## Routing
 

@@ -214,4 +214,5 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
                   caseId, capabilityName);
         submit(eventLogId, instance, worker, capability, inputData, bindingName);
     }
+
 }

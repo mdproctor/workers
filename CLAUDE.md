@@ -35,6 +35,7 @@ mvn --batch-mode deploy -DskipTests
 | `workers-mcp` | `casehub-workers-mcp` | `io.casehub.workers.mcp` | MCP worker — dispatch case steps to MCP server tools via Streamable HTTP |
 | `workers-script` | `casehub-workers-script` | `io.casehub.workers.script` | Script worker — dispatch case steps to local subprocesses (shell, Python, JS) |
 | `workers-k8s` | `casehub-workers-k8s` | `io.casehub.workers.k8s` | Kubernetes Job worker — dispatch case steps as K8s Jobs via fabric8 client, watch-based completion |
+| `workers-scenario` | `casehub-workers-scenario` | `io.casehub.workers.scenario` | Scenario worker — dispatch case steps as scenario executions on casehub-pages via GraphQL |
 | `workers-testing` | `casehub-workers-testing` | `io.casehub.workers.testing` | Shared test fixtures — **test scope only, never compile/runtime** |
 
 Sub-packages follow function: `.registry`, `.callback`, `.fault`, `.route`, `.component` as needed within each root package.
@@ -156,6 +157,18 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 | `K8sJobInformerManager` | Shared informer lifecycle — `Map<String, SharedIndexInformer<Job>>` per unique namespace. Label selector: `app.kubernetes.io/managed-by=casehub`. Handles `onAdd` (reconnection), `onUpdate` (terminal state), `onDelete` (TTL vs. external deletion). `processTerminal()`: `registry.complete()` → capture Pod logs → publish completion/fault → delete Job (cleanup policy). `recoverFromJob()` for Job-metadata recovery after restart; `recoveredDispatchIds` (at-most-once guard via `ConcurrentHashMap.newKeySet()`). Injects `CaseInstanceRepository`. Full K8s fault classification: `BackoffLimitExceeded`, `DeadlineExceeded` (enriched with Pod waiting state), `OOMKilled`, `ImagePullBackOff`, eviction/preemption (retryable), API errors (403/404/422/409) |
 | `K8sWorkerFaultEventHandler` | `@ConsumeEvent(K8S_WORKER_FAULT, blocking=true)` — 5-line stub delegating to `WorkerFaultHandler` |
 
+## workers-scenario Key Types
+
+| Type | Purpose |
+|------|---------|
+| `ScenarioWorkerConstants.WORKER_TYPE = "scenario"` | workerType discriminator |
+| `ScenarioWorkerEventBusAddresses.SCENARIO_WORKER_FAULT` | Separate fault address from other workers |
+| `ResolvedScenarioEndpoint` | Record — `name`, `url`, `timeoutSeconds` |
+| `ScenarioEndpointResolver` | `WorkerCapabilityResolver<ResolvedScenarioEndpoint>` — 3-tier with EndpointRegistry, tenant-aware. Config: `casehub.workers.scenario.endpoints.<name>.url`. Registry: `Path.of("scenario", name)`, protocol check `EndpointProtocol.SCENARIO` |
+| `ScenarioWorkerExecutionManager` | `@WorkerBackend @Priority(10)` — GraphQL dispatch via Vert.x WebClient, async callback completion via `AsyncWorkerCompletionRegistry` |
+| `ScenarioWorkerFaultEventHandler` | `@ConsumeEvent(SCENARIO_WORKER_FAULT, blocking=true)` — 5-line stub delegating to `WorkerFaultHandler` |
+| `ScenarioWorkerRuntime` | `WorkerRuntime` implementation — delegates to `ScenarioEndpointResolver.initializeFromConfig()` |
+
 ## Key Rules
 
 - `workers-testing` is never a compile or runtime dependency — test scope only.
@@ -163,7 +176,7 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 - Workers are stateless — all state in the case instance or external system, never in provisioner beans.
 - `tenancyId` propagated through all calls — bind in Repository layer only (PP-20260520-e6a5f0).
 - Completion fires `eventBus.publish()` on `WORKER_EXECUTION_FINISHED` — never `request()`. Two consumers exist (`WorkflowExecutionCompletedHandler` + `PlanItemCompletionHandler`); `publish()` delivers to both.
-- Worker faults fire on worker-specific addresses (`CAMEL_WORKER_FAULT`, `HTTP_WORKER_FAULT`, `GITHUB_ACTIONS_WORKER_FAULT`, `MCP_WORKER_FAULT`, `SCRIPT_WORKER_FAULT`, `K8S_WORKER_FAULT`), NOT `WORKFLOW_EXECUTION_FAILED` — Quartz listens on the latter and would double-process.
+- Worker faults fire on worker-specific addresses (`CAMEL_WORKER_FAULT`, `HTTP_WORKER_FAULT`, `GITHUB_ACTIONS_WORKER_FAULT`, `MCP_WORKER_FAULT`, `SCRIPT_WORKER_FAULT`, `K8S_WORKER_FAULT`, `SCENARIO_WORKER_FAULT`), NOT `WORKFLOW_EXECUTION_FAILED` — Quartz listens on the latter and would double-process.
 - Fault pipeline is centralized in workers-common: `WorkerFaultPublisher` (parameterized by address), `WorkerFaultHandler` (shared retry body), `WorkerCompletionExpiryObserver` and `WorkerFaultCallbackObserver` (generic, route via `faultAddress` from `PendingCompletion`). Per-module fault handlers are 5-line stubs.
 - `WorkerFaultHandler` always uses `emitOn(Infrastructure.getDefaultWorkerPool())` before re-dispatch — correct for all workers regardless of whether their `submit()` is blocking or reactive. One unnecessary thread hop for reactive workers is negligible on the error path.
 - Retry logic via `WorkerRetrySupport`: `failureCount < retryPolicy.maxAttempts()` (strict `<`); null policy defaults to `new RetryPolicy()` (3 attempts, 10s FIXED).
@@ -210,6 +223,12 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 - `bindingName` propagated end-to-end: `WorkerCorrelationContext.bindingName()` → `WorkflowCompletionPublisher` → `WorkflowExecutionCompleted.bindingName()`. Null until casehubio/engine#676 ships (engine calls 6-arg `submit()`).
 - `bindingName` propagated through fault pipeline: `WorkerCorrelationContext` → `WorkerFaultPublisher` → `WorkerFaultEvent.bindingName()` → `WorkerFaultHandler` → retry re-dispatch (6-arg `submit()`) and `publishRetriesExhausted()`.
 - K8s `bindingName` uses annotation (`casehub.io/binding-name`), not label — user-defined values may exceed 63-char label limit. Recovery reads from `job.getMetadata().getAnnotations()` (null-safe for pre-upgrade Jobs).
+- Scenario dispatch is async: GraphQL mutation fires, callback URL passed to pages, completion arrives via `WorkerCallbackResource`.
+- Scenario `inputData` must contain either `scriptName` (fetches YAML from pages library) or `yaml` (raw YAML). Both null → `PermanentFaultException`. Both present → `scriptName` takes precedence.
+- Scenario library fetch: `GET /scenario/library/{name}/yaml` on the pages instance (base URL derived from GraphQL endpoint URL by stripping `/graphql` suffix).
+- Scenario callback URL: `{casehub.workers.callback-base-url}/workers/complete/{dispatchId}`.
+- Scenario endpoint resolution: 3-tier with EndpointRegistry, tenant-aware. `Path.of("scenario", name)`, protocol check `EndpointProtocol.SCENARIO`.
+- Worker faults fire on `SCENARIO_WORKER_FAULT` (`casehub.workers.scenario.fault`), same pattern as all other workers.
 
 ## Co-deployment
 
@@ -265,12 +284,12 @@ Living docs — check for drift after significant changes:
 
 ## Workspace
 
-**Project repo:** `/Users/mdproctor/claude/casehub/workers`
-**Workspace:** `/Users/mdproctor/claude/public/casehub-workers`
+**Project repo:** `proj/`
+**Workspace:** `wksp/`
 **Workspace type:** public
 
 Git discipline — always use explicit paths:
 ```bash
-git -C /Users/mdproctor/claude/public/casehub-workers ...   # workspace artifacts
-git -C /Users/mdproctor/claude/casehub/workers ...          # project artifacts
+git -C proj/ ...   # workspace artifacts
+git -C proj/ ...          # project artifacts
 ```

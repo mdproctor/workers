@@ -26,6 +26,7 @@
         <module>workers-mcp</module>
         <module>workers-script</module>
         <module>workers-k8s</module>
+        <module>workers-scenario</module>
         <module>workers-testing</module>
     </modules>
 

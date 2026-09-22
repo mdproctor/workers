@@ -3,6 +3,7 @@ package io.casehub.workers.common;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
+import io.casehub.platform.api.mcp.HandWrittenEndpoint;
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
@@ -15,6 +16,7 @@ import java.security.MessageDigest;
 import java.util.Map;
 import java.util.Optional;
 
+@HandWrittenEndpoint("async worker completion callback")
 @Path("/workers/complete")
 @ApplicationScoped
 public class WorkerCallbackResource {

@@ -44,7 +44,7 @@ The pipeline consists of:
 - `WorkerCompletionExpiryObserver` -- `@ObservesAsync CompletionExpiredEvent`. Fired by `AsyncWorkerCompletionRegistry.expireStale()` when a pending completion exceeds its TTL. Routes to fault publisher with `"Async timeout"` message.
 - `WorkerFaultCallbackObserver` -- `@ObservesAsync FaultCallbackEvent`. Fired by `WorkerCallbackResource` when an external callback reports `faulted=true`. Routes to fault publisher.
 
-Worker faults fire on worker-specific addresses (`CAMEL_WORKER_FAULT`, `HTTP_WORKER_FAULT`, `MCP_WORKER_FAULT`, `SCRIPT_WORKER_FAULT`, `GITHUB_ACTIONS_WORKER_FAULT`, `K8S_WORKER_FAULT`), NOT `WORKFLOW_EXECUTION_FAILED` -- Quartz listens on the latter and would double-process.
+Worker faults fire on worker-specific addresses (`CAMEL_WORKER_FAULT`, `HTTP_WORKER_FAULT`, `MCP_WORKER_FAULT`, `SCRIPT_WORKER_FAULT`, `GITHUB_ACTIONS_WORKER_FAULT`, `K8S_WORKER_FAULT`, `SCENARIO_WORKER_FAULT`), NOT `WORKFLOW_EXECUTION_FAILED` -- Quartz listens on the latter and would double-process.
 
 ### Completion Path
 
@@ -59,6 +59,7 @@ Three-tier resolution order: Tier 1 (SPI beans) > Tier 2 (config) > Tier 3 (Endp
 Path conventions:
 - HTTP uses `Path.of("http", capabilityTag)`, accepts `EndpointProtocol.HTTP` only
 - MCP uses `Path.of("mcp", serverName)`, accepts `EndpointProtocol.MCP` only
+- Scenario uses `Path.of("scenario", name)`, accepts `EndpointProtocol.SCENARIO` only
 
 `WorkerCapabilityResolver<T>` interface:
 ```java
@@ -72,11 +73,11 @@ public interface WorkerCapabilityResolver<T> {
 }
 ```
 
-HTTP and MCP resolvers override `canResolve()` to also check EndpointRegistry. Camel uses SPI/Config/Convention tiers only (no EndpointRegistry).
+HTTP, MCP, and Scenario resolvers override `canResolve()` to also check EndpointRegistry. Camel uses SPI/Config/Convention tiers only (no EndpointRegistry).
 
 ### BindingName Correlation
 
-`bindingName` propagation from casehub-engine through worker dispatch enables tracing which YAML binding triggered a worker execution. `WorkerCorrelationContext` carries `bindingName` alongside `caseId`, `idempotency`, and `tenancyId`. All 6 worker modules implement both the 5-arg `submit()` (delegates with `null`) and 6-arg `submit(bindingName)` overload.
+`bindingName` propagation from casehub-engine through worker dispatch enables tracing which YAML binding triggered a worker execution. `WorkerCorrelationContext` carries `bindingName` alongside `caseId`, `idempotency`, and `tenancyId`. All 7 worker modules implement both the 5-arg `submit()` (delegates with `null`) and 6-arg `submit(bindingName)` overload.
 
 `bindingName` flows through:
 - `WorkerCorrelationContext` -> dispatch headers/env vars

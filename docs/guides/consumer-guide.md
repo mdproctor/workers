@@ -281,8 +281,7 @@ Cross-repo dependency: casehub-pages#416 (callback support in scenario engine).
 
 All worker modules share a centralized fault pipeline in `workers-common`:
 
-- `WorkerFaultPublisher` -- publishes `WorkerFaultEvent` onto module-specific Vert.x event bus addresses
-- `{Type}WorkerFaultEventHandler` -- `@ConsumeEvent(blocking = true)` stub that delegates to `WorkerFaultHandler`
+- `WorkerFaultPublisher` -- constructs `WorkerFaultEvent` and passes to injected `Consumer<WorkerFaultEvent>` (Quarkus wiring bridges to fire-and-forget virtual thread)
 - `WorkerFaultHandler` -- shared retry body: persist failure log -> `PermanentFaultException` check -> count failures -> `RetryAfterException` check -> compute backoff -> retry or exhaust
 - `WorkerRetrySupport` -- shared building blocks: `persistFailureLog`, `countFailedAttempts`, `publishRetriesExhausted`, `resolveRetryPolicy`, `computeBackoffDelayMs`, `parseRetryAfter`
 
@@ -341,7 +340,7 @@ Fault classification by worker type:
 | `casehub-platform-api` | `EndpointRegistry`, `EndpointDescriptor`, `EndpointProtocol`, `RetryPolicy`, `BackoffStrategy`, `ExecutionPolicy` |
 | `casehub-worker-api` | `Worker`, `Capability`, `WorkerFunction`, `WorkerResult`, `WorkResult` |
 | `casehub-engine-api` | `WorkerStatusListener`, `CaseHubEventType`, `EventStreamType` |
-| `casehub-engine-common` | `WorkerExecutionManager`, `WorkerBackend`, `WorkflowExecutionCompleted`, `WorkerRetriesExhaustedEvent`, `CaseInstance`, `EventLog`, `EventLogRepository`, `CaseInstanceRepository`, `EventBusAddresses` |
+| `casehub-engine-common` | `WorkerExecutionManager`, `WorkerBackend`, `WorkflowExecutionCompleted`, `WorkerRetriesExhaustedEvent`, `CaseInstance`, `EventLog`, `EventLogRepository`, `CaseInstanceRepository` |
 | Quarkus Camel BOM | Camel module only -- `camel-quarkus-core`, `camel-quarkus-direct` |
 | fabric8 kubernetes-client | K8s module only -- via Quarkus Kubernetes Client extension |
 

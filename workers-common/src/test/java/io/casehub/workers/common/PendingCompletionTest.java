@@ -13,10 +13,9 @@ class PendingCompletionTest {
         Instant now = Instant.now();
         Instant expires = now.plusSeconds(3600);
         PendingCompletion pending = new PendingCompletion(
-            "dispatch-1", "camel", "test.fault.address", null, "token-abc", cap, 42L, now, expires, Map.of("key", "val"));
+            "dispatch-1", "camel", null, "token-abc", cap, 42L, now, expires, Map.of("key", "val"));
         assertThat(pending.dispatchId()).isEqualTo("dispatch-1");
         assertThat(pending.workerType()).isEqualTo("camel");
-        assertThat(pending.faultAddress()).isEqualTo("test.fault.address");
         assertThat(pending.callbackToken()).isEqualTo("token-abc");
         assertThat(pending.capability()).isSameAs(cap);
         assertThat(pending.eventLogId()).isEqualTo(42L);

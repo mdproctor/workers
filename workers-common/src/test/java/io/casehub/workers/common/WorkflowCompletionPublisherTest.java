@@ -1,16 +1,16 @@
 package io.casehub.workers.common;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 
 import io.casehub.worker.api.Worker;
 import io.casehub.worker.api.WorkerFunction;
 import io.casehub.worker.api.WorkerResult;
-import io.casehub.engine.common.internal.event.EventBusAddresses;
 import io.casehub.engine.common.internal.event.WorkflowExecutionCompleted;
 import io.casehub.engine.common.internal.model.CaseInstance;
-import io.vertx.mutiny.core.eventbus.EventBus;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -19,9 +19,8 @@ class WorkflowCompletionPublisherTest {
 
     @Test
     void complete_publishesToWorkerExecutionFinished() {
-        EventBus eventBus = mock(EventBus.class);
-        WorkflowCompletionPublisher publisher = new WorkflowCompletionPublisher();
-        publisher.eventBus = eventBus;
+        @SuppressWarnings("unchecked") Consumer<WorkflowExecutionCompleted> consumer = mock(Consumer.class);
+        WorkflowCompletionPublisher publisher = new WorkflowCompletionPublisher(consumer);
 
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
@@ -33,7 +32,7 @@ class WorkflowCompletionPublisherTest {
 
         ArgumentCaptor<WorkflowExecutionCompleted> captor =
             ArgumentCaptor.forClass(WorkflowExecutionCompleted.class);
-        verify(eventBus).publish(eq(EventBusAddresses.WORKER_EXECUTION_FINISHED), captor.capture());
+        verify(consumer).accept(captor.capture());
 
         WorkflowExecutionCompleted event = captor.getValue();
         assertThat(event.caseInstance()).isSameAs(instance);
@@ -44,9 +43,8 @@ class WorkflowCompletionPublisherTest {
 
     @Test
     void complete_passesBindingNameFromContext() {
-        EventBus eventBus = mock(EventBus.class);
-        WorkflowCompletionPublisher publisher = new WorkflowCompletionPublisher();
-        publisher.eventBus = eventBus;
+        @SuppressWarnings("unchecked") Consumer<WorkflowExecutionCompleted> consumer = mock(Consumer.class);
+        WorkflowCompletionPublisher publisher = new WorkflowCompletionPublisher(consumer);
 
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
@@ -57,15 +55,14 @@ class WorkflowCompletionPublisherTest {
 
         ArgumentCaptor<WorkflowExecutionCompleted> captor =
             ArgumentCaptor.forClass(WorkflowExecutionCompleted.class);
-        verify(eventBus).publish(eq(EventBusAddresses.WORKER_EXECUTION_FINISHED), captor.capture());
+        verify(consumer).accept(captor.capture());
         assertThat(captor.getValue().bindingName()).isEqualTo("binding-x");
     }
 
     @Test
     void complete_nullBindingName_passesNull() {
-        EventBus eventBus = mock(EventBus.class);
-        WorkflowCompletionPublisher publisher = new WorkflowCompletionPublisher();
-        publisher.eventBus = eventBus;
+        @SuppressWarnings("unchecked") Consumer<WorkflowExecutionCompleted> consumer = mock(Consumer.class);
+        WorkflowCompletionPublisher publisher = new WorkflowCompletionPublisher(consumer);
 
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
@@ -76,7 +73,7 @@ class WorkflowCompletionPublisherTest {
 
         ArgumentCaptor<WorkflowExecutionCompleted> captor =
             ArgumentCaptor.forClass(WorkflowExecutionCompleted.class);
-        verify(eventBus).publish(eq(EventBusAddresses.WORKER_EXECUTION_FINISHED), captor.capture());
+        verify(consumer).accept(captor.capture());
         assertThat(captor.getValue().bindingName()).isNull();
     }
 }

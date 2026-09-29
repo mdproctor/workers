@@ -19,6 +19,10 @@
     <dependencies>
         <dependency>
             <groupId>io.casehub</groupId>
+            <artifactId>casehub-workers-common-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.casehub</groupId>
             <artifactId>casehub-engine-api</artifactId>
         </dependency>
         <dependency>

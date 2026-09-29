@@ -1,0 +1,6 @@
+io.casehub.workers.spring.WorkersCommonAutoConfiguration
+io.casehub.workers.spring.GitHubActionsAutoConfiguration
+io.casehub.workers.spring.HttpWorkerAutoConfiguration
+io.casehub.workers.spring.ScenarioWorkerAutoConfiguration
+io.casehub.workers.spring.McpWorkerAutoConfiguration
+io.casehub.workers.spring.K8sWorkerAutoConfiguration

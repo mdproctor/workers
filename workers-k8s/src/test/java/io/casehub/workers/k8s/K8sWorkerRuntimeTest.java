@@ -20,7 +20,7 @@ class K8sWorkerRuntimeTest {
 
     @BeforeEach
     void setUp() {
-        resolver = new JobDefinitionResolver();
+        resolver = new JobDefinitionResolver("default", 3600, 600, 0, "delete", 1_048_576, 262_144);
         informerManager = mock(K8sJobInformerManager.class);
         client = mock(KubernetesClient.class);
         runtime = new K8sWorkerRuntime();
@@ -46,7 +46,7 @@ class K8sWorkerRuntimeTest {
         resolver.initialize(Map.of("test", imageDef("test", "batch")));
         when(informerManager.hasActiveInformers()).thenReturn(true);
 
-        runtime.initialize().await().indefinitely();
+        runtime.initialize();
 
         assertThat(runtime.status()).isEqualTo(WorkerRuntimeStatus.RUNNING);
         assertThat(runtime.capabilities()).containsExactly("k8s:test");
@@ -57,7 +57,7 @@ class K8sWorkerRuntimeTest {
     void initialize_noJobs_transitionsToFaulted() {
         resolver.initialize(Map.of());
 
-        runtime.initialize().await().indefinitely();
+        runtime.initialize();
 
         assertThat(runtime.status()).isEqualTo(WorkerRuntimeStatus.FAULTED);
     }
@@ -67,7 +67,7 @@ class K8sWorkerRuntimeTest {
         resolver.initialize(Map.of("test", imageDef("test", "batch")));
         when(informerManager.hasActiveInformers()).thenReturn(false);
 
-        runtime.initialize().await().indefinitely();
+        runtime.initialize();
 
         assertThat(runtime.status()).isEqualTo(WorkerRuntimeStatus.FAULTED);
     }
@@ -77,8 +77,8 @@ class K8sWorkerRuntimeTest {
         resolver.initialize(Map.of("test", imageDef("test", "batch")));
         when(informerManager.hasActiveInformers()).thenReturn(true);
 
-        runtime.initialize().await().indefinitely();
-        runtime.initialize().await().indefinitely();
+        runtime.initialize();
+        runtime.initialize();
 
         assertThat(runtime.status()).isEqualTo(WorkerRuntimeStatus.RUNNING);
     }
@@ -86,12 +86,12 @@ class K8sWorkerRuntimeTest {
     @Test
     void initialize_whenFaulted_retriesAndRecovers() {
         resolver.initialize(Map.of());
-        runtime.initialize().await().indefinitely();
+        runtime.initialize();
         assertThat(runtime.status()).isEqualTo(WorkerRuntimeStatus.FAULTED);
 
         resolver.initialize(Map.of("test", imageDef("test", "batch")));
         when(informerManager.hasActiveInformers()).thenReturn(true);
-        runtime.initialize().await().indefinitely();
+        runtime.initialize();
 
         assertThat(runtime.status()).isEqualTo(WorkerRuntimeStatus.RUNNING);
     }
@@ -101,8 +101,8 @@ class K8sWorkerRuntimeTest {
         resolver.initialize(Map.of("test", imageDef("test", "batch")));
         when(informerManager.hasActiveInformers()).thenReturn(true);
 
-        runtime.initialize().await().indefinitely();
-        runtime.shutdown().await().indefinitely();
+        runtime.initialize();
+        runtime.shutdown();
 
         assertThat(runtime.status()).isEqualTo(WorkerRuntimeStatus.STOPPED);
         verify(informerManager).stop();

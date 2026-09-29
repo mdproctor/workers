@@ -13,12 +13,13 @@ import io.vertx.mutiny.ext.web.client.WebClient;
 import jakarta.annotation.PostConstruct;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 import org.jboss.logging.Logger;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 @ApplicationScoped
-public class McpSessionManager {
+public class McpSessionManager implements McpSessionProvider {
 
     private static final Logger LOG = Logger.getLogger(McpSessionManager.class);
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -54,6 +55,12 @@ public class McpSessionManager {
     public void invalidate(String serverName) {
         sessions.remove(serverName);
     }
+
+    @Override
+    public McpSession getSession(String serverName) {
+        return getOrInitialize(serverName).await().indefinitely();
+    }
+
 
     public Uni<Void> shutdown() {
         return Uni.createFrom().item(() -> {

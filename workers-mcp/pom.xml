@@ -13,9 +13,14 @@
     <artifactId>casehub-workers-mcp</artifactId>
 
     <name>CaseHub Workers :: MCP</name>
-    <description>WorkerProvisioner and WorkerExecutionManager for MCP — dispatch case steps to MCP server tools via Streamable HTTP</description>
+    <description>Quarkus CDI wiring for MCP worker — session manager (Vert.x WebClient),
+        runtime, and @Produces beans delegating to core POJOs</description>
 
     <dependencies>
+        <dependency>
+            <groupId>io.casehub</groupId>
+            <artifactId>casehub-workers-mcp-core</artifactId>
+        </dependency>
         <dependency>
             <groupId>io.casehub</groupId>
             <artifactId>casehub-workers-common</artifactId>
@@ -26,15 +31,7 @@
         </dependency>
         <dependency>
             <groupId>io.casehub</groupId>
-            <artifactId>casehub-engine-api</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.casehub</groupId>
             <artifactId>casehub-engine-common</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.casehub</groupId>
-            <artifactId>casehub-worker-api</artifactId>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>

@@ -73,7 +73,7 @@ class K8sJobInformerManagerTest {
         when(nsOp.withLabel(anyString(), anyString())).thenReturn(labelOp);
 
         caseInstanceRepository = mock(CaseInstanceRepository.class);
-        resolver = new JobDefinitionResolver();
+        resolver = new JobDefinitionResolver("default", 3600, 600, 0, "delete", 1_048_576, 262_144);
         resolver.initialize(Map.of("test", imageDef("test")));
         testCaseInstance = new CaseInstance();
         testCaseInstance.setUuid(CASE_ID);
@@ -414,7 +414,7 @@ class K8sJobInformerManagerTest {
             .function(new WorkerFunction.Sync<>(Map.class, Map.class, (ctx, scope) -> WorkerResult.of(Map.of()))).build();
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash", "t1", null);
         return new PendingCompletion(dispatchId, K8sWorkerConstants.WORKER_TYPE,
-            K8sWorkerEventBusAddresses.K8S_WORKER_FAULT, ctx, "token-1",
+            ctx, "token-1",
             capability, 1L,
             Instant.now(), Instant.now().plusSeconds(3600),
             Map.of("cleanup", cleanupPolicy));
@@ -469,7 +469,7 @@ class K8sJobInformerManagerTest {
             "Complete", CASE_ID, "t1", "w1", "k8s:test", 1L, "idem-hash");
         when(registry.complete("dispatch-1")).thenReturn(Optional.empty());
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
-            .thenReturn(testCaseInstance);
+            .thenReturn(java.util.Optional.of(testCaseInstance));
         when(labelOp.list()).thenReturn(emptyPodList());
 
         manager.processTerminal(job, "dispatch-1");
@@ -493,7 +493,7 @@ class K8sJobInformerManagerTest {
             "Complete", CASE_ID, "t1", "w1", "k8s:test", 1L, "idem-hash");
         when(registry.complete("dispatch-3")).thenReturn(Optional.empty());
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
-            .thenReturn(testCaseInstance);
+            .thenReturn(java.util.Optional.of(testCaseInstance));
         when(labelOp.list()).thenReturn(emptyPodList());
 
         manager.processTerminal(job, "dispatch-3");
@@ -509,7 +509,7 @@ class K8sJobInformerManagerTest {
         job.getStatus().getConditions().get(0).setReason("DeadlineExceeded");
         when(registry.complete("dispatch-4")).thenReturn(Optional.empty());
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
-            .thenReturn(testCaseInstance);
+            .thenReturn(java.util.Optional.of(testCaseInstance));
         when(labelOp.list()).thenReturn(emptyPodList());
 
         manager.processTerminal(job, "dispatch-4");
@@ -525,7 +525,7 @@ class K8sJobInformerManagerTest {
             "Complete", CASE_ID, "t1", "w1", "k8s:test", 1L, "idem-hash");
         when(registry.complete("dispatch-5")).thenReturn(Optional.empty());
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
-            .thenReturn(null);
+            .thenReturn(java.util.Optional.empty());
 
         manager.processTerminal(job, "dispatch-5");
 
@@ -540,7 +540,7 @@ class K8sJobInformerManagerTest {
             "dispatch-6", "Complete", CASE_ID, "t1", "w1", "k8s:test", 1L,
             "idem-hash", "recovered-binding");
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
-            .thenReturn(testCaseInstance);
+            .thenReturn(java.util.Optional.of(testCaseInstance));
 
         Optional<PendingCompletion> result = manager.recoverFromJob(job, "dispatch-6");
 
@@ -554,7 +554,7 @@ class K8sJobInformerManagerTest {
             "Complete", CASE_ID, "t1", "w1", "k8s:test", 1L, "idem-hash");
         // No annotation — pre-upgrade Job
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
-            .thenReturn(testCaseInstance);
+            .thenReturn(java.util.Optional.of(testCaseInstance));
 
         Optional<PendingCompletion> result = manager.recoverFromJob(job, "dispatch-7");
 

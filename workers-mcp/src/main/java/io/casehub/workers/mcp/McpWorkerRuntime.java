@@ -49,21 +49,15 @@ public class McpWorkerRuntime implements WorkerRuntime {
     }
 
     @Override
-    public Uni<Void> initialize() {
-        if (status == WorkerRuntimeStatus.RUNNING) {
-            return Uni.createFrom().voidItem();
-        }
+    public void initialize() {
+        if (status == WorkerRuntimeStatus.RUNNING) { return; }
 
-        // Only load from config if not already initialized (supports pre-initialized test fixtures)
-        if (serverResolver.serverNames().isEmpty()) {
-            serverResolver.initializeFromConfig();
-        }
         List<String> serverNames = serverResolver.serverNames();
 
         if (serverNames.isEmpty()) {
             LOG.warn("No MCP servers configured — status FAULTED");
             status = WorkerRuntimeStatus.FAULTED;
-            return Uni.createFrom().voidItem();
+            return;
         }
 
         List<Uni<ServerInitResult>> initUnis = new ArrayList<>();
@@ -71,20 +65,20 @@ public class McpWorkerRuntime implements WorkerRuntime {
             initUnis.add(initializeServer(serverName));
         }
 
-        return Uni.join().all(initUnis).andFailFast()
-            .onItem().invoke(results -> processResults(results))
-            .replaceWithVoid();
+        List<ServerInitResult> results = Uni.join().all(initUnis).andFailFast()
+            .await().indefinitely();
+        processResults(results);
     }
 
     @Override
-    public Uni<Void> shutdown() {
-        return sessionManager.shutdown()
-            .onItem().invoke(() -> status = WorkerRuntimeStatus.STOPPED)
-            .onFailure().invoke(err -> {
-                LOG.warnf("Error during MCP shutdown: %s", err.getMessage());
-                status = WorkerRuntimeStatus.STOPPED;
-            })
-            .onFailure().recoverWithItem((Void) null);
+    public void shutdown() {
+        try {
+            sessionManager.shutdown().await().indefinitely();
+            status = WorkerRuntimeStatus.STOPPED;
+        } catch (Exception err) {
+            LOG.warnf("Error during MCP shutdown: %s", err.getMessage());
+            status = WorkerRuntimeStatus.STOPPED;
+        }
     }
 
     @Override

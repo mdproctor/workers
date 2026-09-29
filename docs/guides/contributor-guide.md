@@ -10,45 +10,32 @@
 
 ### Module Architecture Pattern
 
-Every worker module follows a consistent four-class pattern:
+Every worker type follows a two-layer architecture: a **-core** module containing framework-neutral POJOs (zero CDI, zero Vert.x, JDK HttpClient for HTTP dispatch) and a **Quarkus** module providing CDI wiring via `@Produces`. The consolidated **workers-spring** module provides Spring Boot auto-configuration for all worker types via `@AutoConfiguration` + `@ConditionalOnClass` guards.
+
+Within each core module, a consistent three-class pattern:
 
 | Class | Role |
 |-------|------|
 | `{Type}WorkerRuntime` | Implements `WorkerRuntime`. Initializes transport, resolver, and discovers capabilities. |
 | `{Type}CapabilityResolver` / `{Type}ServerResolver` / `{Type}DefinitionResolver` | Implements `WorkerCapabilityResolver<T>`. Maps capability tags to concrete targets (endpoints, servers, definitions). |
 | `{Type}WorkerExecutionManager` | Implements `WorkerExecutionManager` with `@WorkerBackend @Priority(10)`. Dispatches work -- serializes input, sends to target, handles response, publishes completion or fault. |
-| `{Type}WorkerFaultEventHandler` | `@ConsumeEvent(blocking = true)` on module-specific fault address. 5-line stub that delegates to `WorkerFaultHandler`. |
 
 The K8s module adds additional types beyond this pattern: `K8sJobBuilder` (Job construction), `K8sJobInformerManager` (watch-based completion, restart recovery), `K8sJobOutputCapture` (Pod log capture), `JobDefinition` (config record), `CleanupPolicy` (enum).
 
 ### Fault Pipeline Architecture
 
-Centralized in `workers-common`. Per-module fault event handlers are 5-line stubs that all delegate to the same `WorkerFaultHandler`:
-
-```java
-@ApplicationScoped
-public class HttpWorkerFaultEventHandler {
-    @Inject WorkerFaultHandler workerFaultHandler;
-
-    @ConsumeEvent(value = HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT, blocking = true)
-    public void onFault(WorkerFaultEvent event) {
-        workerFaultHandler.handleFault(event);
-    }
-}
-```
+Centralized in `workers-common-core`. All fault handling flows through `WorkerFaultPublisher` which accepts a `Consumer<WorkerFaultEvent>` — the Quarkus wiring layer wraps this in a fire-and-forget virtual thread.
 
 The pipeline consists of:
 
-- `WorkerFaultPublisher` -- two `fault()` overloads: one from explicit parameters, one from `PendingCompletion`. Both publish `WorkerFaultEvent` onto the Vert.x event bus at the specified `faultAddress`.
-- `WorkerFaultHandler` -- shared retry body: `persistFailureLog` -> `PermanentFaultException` check -> `countFailedAttempts` -> `RetryAfterException` check -> `computeBackoffDelayMs` -> `reloadAndResubmit` or `publishRetriesExhausted`. Retry re-dispatch reloads the `EventLog` and calls `workerExecutionManager.submit()` with the 6-arg overload (preserving `bindingName`). Delay is applied via `Thread.sleep()` since all fault handlers run on the worker pool (`blocking = true`).
+- `WorkerFaultPublisher` -- two `fault()` overloads: one from explicit parameters (ctx, capability, eventLogId, cause), one from `PendingCompletion`. Both construct `WorkerFaultEvent` and pass to the injected `Consumer<WorkerFaultEvent>`.
+- `WorkerFaultHandler` -- shared retry body: `persistFailureLog` -> `PermanentFaultException` check -> `countFailedAttempts` -> `RetryAfterException` check -> `computeBackoffDelayMs` -> `reloadAndResubmit` or `publishRetriesExhausted`. Retry re-dispatch reloads the `EventLog` and calls `workerExecutionManager.submit()` with the 6-arg overload (preserving `bindingName`). Delay is applied via `Thread.sleep()` on virtual threads.
 - `WorkerCompletionExpiryObserver` -- `@ObservesAsync CompletionExpiredEvent`. Fired by `AsyncWorkerCompletionRegistry.expireStale()` when a pending completion exceeds its TTL. Routes to fault publisher with `"Async timeout"` message.
 - `WorkerFaultCallbackObserver` -- `@ObservesAsync FaultCallbackEvent`. Fired by `WorkerCallbackResource` when an external callback reports `faulted=true`. Routes to fault publisher.
 
-Worker faults fire on worker-specific addresses (`CAMEL_WORKER_FAULT`, `HTTP_WORKER_FAULT`, `MCP_WORKER_FAULT`, `SCRIPT_WORKER_FAULT`, `GITHUB_ACTIONS_WORKER_FAULT`, `K8S_WORKER_FAULT`, `SCENARIO_WORKER_FAULT`), NOT `WORKFLOW_EXECUTION_FAILED` -- Quartz listens on the latter and would double-process.
-
 ### Completion Path
 
-`WorkflowCompletionPublisher.complete()` fires `WorkflowExecutionCompleted.approved()` on `EventBusAddresses.WORKER_EXECUTION_FINISHED` via `eventBus.publish()`. Uses `publish()`, never `request()` -- two consumers exist; `publish()` delivers to both.
+`WorkflowCompletionPublisher.complete()` fires `WorkflowExecutionCompleted.approved()` via the injected `Consumer<WorkflowExecutionCompleted>`.
 
 `WorkerStatusPublisher` delegates dispatch-level lifecycle events to the engine's `WorkerStatusListener` SPI: `onWorkerStarted(dispatchId, sessionMeta)`, `onWorkerCompleted(dispatchId, result)`, `onWorkerStalled(dispatchId)`.
 
@@ -105,13 +92,13 @@ CDI qualifier applied to all `WorkerExecutionManager` implementations. Each exec
 | `WorkerLifecycleOrchestrator` | class | Discovers all `WorkerRuntime` beans, calls `initialize()` at startup (`@Priority(APPLICATION + 10)`), `shutdown()` at `@PreDestroy`. Sequential across types, fail-open per worker |
 | `WorkerCapabilityResolver<T>` | interface (SPI) | Tenancy-aware endpoint resolution: `resolve(tag, tenancyId)`, `firstMatch(capabilities, tenancyId)`, `capabilities()`, `canResolve(tag, tenancyId)` |
 | `WorkerCorrelationContext` | record | Per-dispatch context: `caseInstance`, `worker`, `idempotency`, `tenancyId`, `bindingName` |
-| `PendingCompletion` | record | Registry entry per async dispatch: `dispatchId`, `workerType`, `faultAddress`, `correlationContext`, `callbackToken`, `capability`, `eventLogId`, `registeredAt`, `expiresAt`, `provisionerMeta` |
+| `PendingCompletion` | record | Registry entry per async dispatch: `dispatchId`, `workerType`, `correlationContext`, `callbackToken`, `capability`, `eventLogId`, `registeredAt`, `expiresAt`, `provisionerMeta` |
 | `AsyncWorkerCompletionRegistry` | class | In-memory `ConcurrentHashMap` pending completion store. `expireStale()` fires `CompletionExpiredEvent` CDI async. Schedule: `casehub.workers.async.expiry-check-interval` (default 5m) |
 | `WorkerCallbackResource` | class (JAX-RS) | `POST /workers/complete/{dispatchId}` -- REST callback for external systems. Token validation, re-registration on mismatch |
 | `WorkerCompletionPayload` | record | Callback request body: `output` (Map), `faulted` (boolean), `errorMessage` (String) |
-| `WorkflowCompletionPublisher` | class | Fires `WorkflowExecutionCompleted.approved()` on `WORKER_EXECUTION_FINISHED` via `eventBus.publish()` |
+| `WorkflowCompletionPublisher` | class | Fires `WorkflowExecutionCompleted.approved()` via injected `Consumer<WorkflowExecutionCompleted>` |
 | `WorkerStatusPublisher` | class | Delegates to `WorkerStatusListener`: `onWorkerStarted`, `onWorkerCompleted`, `onWorkerStalled` |
-| `WorkerFaultEvent` | record | Vert.x event bus payload: `caseInstance`, `worker`, `capability`, `inputDataHash`, `eventLogId`, `cause`, `bindingName` |
+| `WorkerFaultEvent` | record | Fault payload: `caseInstance`, `worker`, `capability`, `inputDataHash`, `eventLogId`, `cause`, `bindingName` |
 | `WorkerFaultPublisher` | class | Generic fault publisher -- two overloads: from explicit params, from `PendingCompletion` |
 | `WorkerFaultHandler` | class | Shared fault handler body: persist -> check permanent -> count -> backoff -> retry-or-exhaust |
 | `WorkerRetrySupport` | class | Shared retry building blocks -- static: `resolveRetryPolicy`, `computeBackoffDelayMs`, `parseRetryAfter`. Instance: `persistFailureLog`, `countFailedAttempts`, `publishRetriesExhausted` |
@@ -127,7 +114,7 @@ CDI qualifier applied to all `WorkerExecutionManager` implementations. Each exec
 
 ### workers-http
 
-9 classes in `io.casehub.workers.http`:
+7 classes in `io.casehub.workers.http`:
 
 | Type | Purpose |
 |------|---------|
@@ -138,8 +125,6 @@ CDI qualifier applied to all `WorkerExecutionManager` implementations. Each exec
 | `ResolvedEndpoint` | Record: `url`, `method`, `mode` (ExchangeMode), `headers`, `timeoutSeconds` |
 | `ExchangeMode` | Enum: `SYNC`, `ASYNC` |
 | `HttpWorkerConstants` | `WORKER_TYPE = "http"` |
-| `HttpWorkerEventBusAddresses` | `HTTP_WORKER_FAULT` address constant |
-| `HttpWorkerFaultEventHandler` | Fault stub -> `WorkerFaultHandler` |
 
 Key implementation details:
 - URI template interpolation: `{fieldName}` placeholders resolved from `inputData`. Missing keys -> `PermanentFaultException`
@@ -150,7 +135,7 @@ Key implementation details:
 
 ### workers-camel
 
-10 classes across two packages:
+8 classes across two packages:
 
 | Type | Package | Purpose |
 |------|---------|---------|
@@ -159,8 +144,6 @@ Key implementation details:
 | `CamelWorkerExecutionManager` | `.camel` | `WorkerExecutionManager` with `@WorkerBackend`. Sync via `ProducerTemplate.request()`, async via `ProducerTemplate.send()` + `PendingCompletion` |
 | `CamelWorkerRoute` | `.camel` | SPI interface: `capabilityTag()`, `entryUri()`, `exchangePattern()` |
 | `CamelWorkerConstants` | `.camel` | `WORKER_TYPE = "camel"` |
-| `CamelWorkerEventBusAddresses` | `.camel` | `CAMEL_WORKER_FAULT` address constant |
-| `CamelWorkerFaultEventHandler` | `.camel` | Fault stub -> `WorkerFaultHandler` |
 | `CasehubComponent` | `.camel.component` | Camel component registered as `casehub:` URI scheme. Creates `CasehubEndpoint` |
 | `CasehubEndpoint` | `.camel.component` | Producer-only endpoint. Creates `CasehubProducer`. Consumer creation throws `UnsupportedOperationException` |
 | `CasehubProducer` | `.camel.component` | Resolves `PendingCompletion` by `casehub-worker-id` header. Completes or faults based on exchange exception or `casehub-work-status: FAULTED` header |
@@ -173,7 +156,7 @@ Key implementation details:
 
 ### workers-mcp
 
-10 classes in `io.casehub.workers.mcp`:
+8 classes in `io.casehub.workers.mcp`:
 
 | Type | Purpose |
 |------|---------|
@@ -185,8 +168,6 @@ Key implementation details:
 | `ResolvedMcpServer` | Record: `name`, `url`, `timeoutSeconds`, `headers`, `tools` (Set<String>) |
 | `ServerInitResult` | Record: `serverName`, `success`, `session`, `discoveredTools`, `error`. Static factories: `success()`, `failure()` |
 | `McpWorkerConstants` | `WORKER_TYPE = "mcp"`, `PROTOCOL_VERSION = "2025-06-18"`, `CLIENT_NAME = "CaseHub"`, `CLIENT_VERSION = "0.2"` |
-| `McpWorkerEventBusAddresses` | `MCP_WORKER_FAULT` address constant |
-| `McpWorkerFaultEventHandler` | Fault stub -> `WorkerFaultHandler` |
 
 Key implementation details:
 - Session init critical ordering: `onFailure().invoke(() -> sessions.remove(k))` BEFORE `memoize().indefinitely()`. Reversing caches the failed Uni permanently
@@ -200,7 +181,7 @@ Key implementation details:
 
 ### workers-github-actions
 
-6 classes in `io.casehub.workers.githubactions`:
+4 classes in `io.casehub.workers.githubactions`:
 
 | Type | Purpose |
 |------|---------|
@@ -208,8 +189,6 @@ Key implementation details:
 | `GitHubActionsWorkerExecutionManager` | `WorkerExecutionManager` with `@WorkerBackend`. Dispatches to GitHub API. `supports()` checks against two fixed capability constants |
 | `GitHubActionsTokenResolver` | Per-org + global PAT resolution. `casehub.workers.github-actions.tokens.{org}` -> `casehub.workers.github-actions.token` fallback. Configurable API base URL |
 | `GitHubActionsWorkerConstants` | `WORKER_TYPE = "github-actions"`, two capability tag constants |
-| `GitHubActionsWorkerEventBusAddresses` | `GITHUB_ACTIONS_WORKER_FAULT` address constant |
-| `GitHubActionsWorkerFaultEventHandler` | Fault stub -> `WorkerFaultHandler` |
 
 Key implementation details:
 - Fire-and-forget: no `PendingCompletion`, no async registry. 2xx = dispatched, complete immediately
@@ -219,7 +198,7 @@ Key implementation details:
 
 ### workers-script
 
-7 classes in `io.casehub.workers.script`:
+5 classes in `io.casehub.workers.script`:
 
 | Type | Purpose |
 |------|---------|
@@ -228,8 +207,6 @@ Key implementation details:
 | `ScriptWorkerExecutionManager` | `WorkerExecutionManager` with `@WorkerBackend`. Executes via `ProcessBuilder`. Synchronous: blocks on process completion |
 | `ScriptDefinition` | Record: `name`, `command`, `args` (List), `workingDirectory`, `environment` (Map), `timeoutSeconds`, `maxOutputBytes` |
 | `ScriptWorkerConstants` | `WORKER_TYPE = "script"` |
-| `ScriptWorkerEventBusAddresses` | `SCRIPT_WORKER_FAULT` address constant |
-| `ScriptWorkerFaultEventHandler` | Fault stub -> `WorkerFaultHandler` |
 
 Key implementation details:
 - Input: stdin receives `inputData` as JSON. Broken pipe on stdin (process exited before write) is silently ignored
@@ -241,7 +218,7 @@ Key implementation details:
 
 ### workers-k8s
 
-11 classes in `io.casehub.workers.k8s`:
+9 classes in `io.casehub.workers.k8s`:
 
 | Type | Purpose |
 |------|---------|
@@ -254,8 +231,6 @@ Key implementation details:
 | `JobDefinition` | Record: `name`, `namespace`, `image`, `command`, `args`, `template`, resource requests/limits, `timeoutSeconds`, `ttlAfterFinished`, `backoffLimit`, `maxOutputBytes`, `serviceAccount`, `labels`, `environment`, `cleanup` |
 | `CleanupPolicy` | Enum: `DELETE`, `RETAIN` |
 | `K8sWorkerConstants` | `WORKER_TYPE = "k8s"`, `TAG_PREFIX = "k8s:"`, label key constants, annotation key constant |
-| `K8sWorkerEventBusAddresses` | `K8S_WORKER_FAULT` address constant |
-| `K8sWorkerFaultEventHandler` | Fault stub -> `WorkerFaultHandler` |
 
 Key implementation details:
 - `restartPolicy: Never` always enforced; `backoffLimit` defaults to 0 -- CaseHub's fault pipeline owns retry
@@ -282,12 +257,12 @@ Key implementation details:
 
 - Workers are stateless -- all state in the case instance or external system, never in execution manager beans
 - `tenancyId` propagated through all resolution and dispatch calls
-- Completion fires `eventBus.publish()` on `WORKER_EXECUTION_FINISHED` -- never `request()`. Two consumers exist; `publish()` delivers to both
+- Completion fires via `Consumer<WorkflowExecutionCompleted>` -- Quarkus wiring layer bridges to CDI Event
 - Retry logic: `failureCount < retryPolicy.maxAttempts()` (strict `<`); null policy defaults to `new RetryPolicy()` (3 attempts, 10s FIXED)
-- All fault event handlers use `@ConsumeEvent(blocking = true)` -- fault handling runs on the Vert.x worker pool, not the event loop
+- Fault handling runs on virtual threads via fire-and-forget `Consumer<WorkerFaultEvent>`
 - Worker runtime status reflects initialization outcome only -- post-init dispatch failures go through the per-dispatch fault pipeline
 - FAULTED -> RUNNING recovery: calling `initialize()` on a FAULTED runtime retries initialization
-- Build order: `workers-common` must be first in parent POM `<modules>` -- all others depend on it
+- Build order: `workers-common-core` -> `workers-common` -> per-type `-core` -> per-type Quarkus -> `workers-spring` -> `workers-testing`
 - `submit()` 5-arg overload delegates to 6-arg with `bindingName = null` in every module
 
 ## Cross-Repo Dependencies
@@ -296,7 +271,7 @@ Key implementation details:
 |---|---|
 | `casehub-worker-api` | `Worker`, `Capability`, `WorkerFunction`, `WorkerResult`, `WorkResult` |
 | `casehub-engine-api` | `WorkerStatusListener`, `CaseHubEventType`, `EventStreamType` |
-| `casehub-engine-common` | `WorkerExecutionManager`, `WorkerBackend`, `WorkflowExecutionCompleted`, `WorkerRetriesExhaustedEvent`, `CaseInstance`, `EventLog`, `EventLogRepository`, `CaseInstanceRepository`, `EventBusAddresses`, `WorkerExecutionKeys` |
+| `casehub-engine-common` | `WorkerExecutionManager`, `WorkerBackend`, `WorkflowExecutionCompleted`, `WorkerRetriesExhaustedEvent`, `CaseInstance`, `EventLog`, `EventLogRepository`, `CaseInstanceRepository`, `WorkerExecutionKeys` |
 | `casehub-platform-api` | `EndpointRegistry`, `EndpointDescriptor`, `EndpointProtocol`, `EndpointPropertyKeys`, `Path`, `RetryPolicy`, `BackoffStrategy`, `ExecutionPolicy` |
 
 ## Depended On By
@@ -307,8 +282,8 @@ Key implementation details:
 
 ## Current State
 
-- All 8 modules (common, http, camel, github-actions, mcp, script, k8s, testing) on main with tests
-- Consistent four-class pattern across all dispatch modules (Runtime, Resolver, ExecutionManager, FaultEventHandler)
+- All 18 modules (common-core, common, 7 per-type -core, 7 per-type Quarkus, workers-spring, testing) on main with tests
+- Consistent three-class pattern across all dispatch modules (Runtime, Resolver, ExecutionManager)
 - `@WorkerBackend` qualifier enables CDI-based dynamic dispatch
 - MCP module supports Streamable HTTP transport with configurable `tools/list` discovery (`discovery=auto|manual`)
 - Camel module includes a custom `casehub:` Camel component for in-route completion signalling, plus convention-based auto-discovery from `CamelContext` routes

@@ -548,12 +548,12 @@ Not closed here: L2 (fault pipeline), L3 (lifecycle orchestration).
 
 ##### Key files
 
-- `workers-common/src/main/java/io/casehub/workers/common/PendingCompletion.java` — registry entry: dispatchId, workerType, faultAddress, callbackToken, capability, eventLogId
+- `workers-common-core/src/main/java/io/casehub/workers/common/PendingCompletion.java` — registry entry: dispatchId, workerType, faultAddress, callbackToken, capability, eventLogId
 - `workers-common/src/main/java/io/casehub/workers/common/AsyncWorkerCompletionRegistry.java` — in-memory pending completion store
 - `workers-common/src/main/java/io/casehub/workers/common/WorkerCallbackResource.java` — REST callback endpoint
 - `workers-common/src/main/java/io/casehub/workers/common/WorkerRetrySupport.java` — shared retry building blocks
 - `workers-common/src/main/java/io/casehub/workers/common/WorkflowCompletionPublisher.java` — fires completion on `WORKER_EXECUTION_FINISHED`
-- `workers-common/src/main/java/io/casehub/workers/common/CasehubWorkerHeaders.java` — header name constants
+- `workers-common-core/src/main/java/io/casehub/workers/common/CasehubWorkerHeaders.java` — header name constants
 
 ##### Key wiring
 
@@ -614,8 +614,8 @@ Not closed here: per-worker fault classification logic remains in each execution
 
 - `workers-common/src/main/java/io/casehub/workers/common/WorkerFaultPublisher.java` — generic fault publisher parameterized by address
 - `workers-common/src/main/java/io/casehub/workers/common/WorkerFaultHandler.java` — shared fault handler body
-- `workers-common/src/main/java/io/casehub/workers/common/PermanentFaultException.java` — worker-agnostic "don't retry" signal
-- `workers-common/src/main/java/io/casehub/workers/common/RetryAfterException.java` — worker-agnostic "retry after delay" signal
+- `workers-common-core/src/main/java/io/casehub/workers/common/PermanentFaultException.java` — worker-agnostic "don't retry" signal
+- `workers-common-core/src/main/java/io/casehub/workers/common/RetryAfterException.java` — worker-agnostic "retry after delay" signal
 - `workers-common/src/main/java/io/casehub/workers/common/WorkerCompletionExpiryObserver.java` — generic `@ObservesAsync CompletionExpiredEvent`
 - `workers-common/src/main/java/io/casehub/workers/common/WorkerFaultCallbackObserver.java` — generic `@ObservesAsync FaultCallbackEvent`
 
@@ -678,9 +678,9 @@ Not closed here: no health endpoint yet; status reflects initialization outcome 
 
 ##### Key files
 
-- `workers-common/src/main/java/io/casehub/workers/common/WorkerRuntime.java` — lifecycle SPI interface
-- `workers-common/src/main/java/io/casehub/workers/common/WorkerRuntimeStatus.java` — PENDING, RUNNING, FAULTED, STOPPED
-- `workers-common/src/main/java/io/casehub/workers/common/WorkerLifecycleOrchestrator.java` — CDI discovery + sequential init + fail-open
+- `workers-common-core/src/main/java/io/casehub/workers/common/WorkerRuntime.java` — lifecycle SPI interface
+- `workers-common-core/src/main/java/io/casehub/workers/common/WorkerRuntimeStatus.java` — PENDING, RUNNING, FAULTED, STOPPED
+- `workers-common/src/main/java/io/casehub/workers/common/QuarkusWorkerLifecycleOrchestrator.java` — CDI discovery + sequential init + fail-open
 
 ##### Key wiring
 
@@ -741,11 +741,9 @@ Not closed here: L3 (lifecycle — added in C5), L2 (generic fault pipeline — 
 ##### Key files
 
 - `workers-camel/src/main/java/io/casehub/workers/camel/CamelWorkerConstants.java` — `WORKER_TYPE = "camel"`
-- `workers-camel/src/main/java/io/casehub/workers/camel/CamelWorkerEventBusAddresses.java` — `CAMEL_WORKER_FAULT`
 - `workers-camel/src/main/java/io/casehub/workers/camel/CamelCapabilityResolver.java` — config-driven tag → Camel URI resolution
 - `workers-camel/src/main/java/io/casehub/workers/camel/CamelWorkerExecutionManager.java` — `ProducerTemplate` dispatch
 - `workers-camel/src/main/java/io/casehub/workers/camel/CamelReactiveWorkerProvisioner.java` — capability probe
-- `workers-camel/src/main/java/io/casehub/workers/camel/CamelWorkerFaultEventHandler.java` — 5-line stub → `WorkerFaultHandler`
 - `workers-camel/src/main/java/io/casehub/workers/camel/CamelWorkerRuntime.java` — `WorkerRuntime` implementation
 
 ##### Architectural decisions
@@ -986,11 +984,11 @@ Not closed here: no sandboxing or resource isolation for subprocess execution.
 
 ##### Key files
 
-- `workers-script/src/main/java/io/casehub/workers/script/ScriptDefinition.java` — record: name, command, args, workingDirectory, environment, timeoutSeconds, maxOutputBytes
-- `workers-script/src/main/java/io/casehub/workers/script/ScriptDefinitionResolver.java` — config-driven resolution; capability tag prefix `script:`
-- `workers-script/src/main/java/io/casehub/workers/script/ScriptWorkerExecutionManager.java` — ProcessBuilder dispatch; bounded stream capture; dedicated ExecutorService for draining
+- `workers-script-core/src/main/java/io/casehub/workers/script/ScriptDefinition.java` — record: name, command, args, workingDirectory, environment, timeoutSeconds, maxOutputBytes
+- `workers-script-core/src/main/java/io/casehub/workers/script/ScriptDefinitionResolver.java` — config-driven resolution; capability tag prefix `script:`
+- `workers-script-core/src/main/java/io/casehub/workers/script/ScriptWorkerExecutionManager.java` — ProcessBuilder dispatch; bounded stream capture; dedicated ExecutorService for draining
 - `workers-script/src/main/java/io/casehub/workers/script/ScriptReactiveWorkerProvisioner.java` — validates tag exists in resolver
-- `workers-script/src/main/java/io/casehub/workers/script/ScriptWorkerRuntime.java` — delegates to resolver; zero scripts → FAULTED
+- `workers-script-core/src/main/java/io/casehub/workers/script/ScriptWorkerRuntime.java` — delegates to resolver; zero scripts → FAULTED
 
 ##### Architectural decisions
 

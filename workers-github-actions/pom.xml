@@ -13,57 +13,24 @@
     <artifactId>casehub-workers-github-actions</artifactId>
 
     <name>CaseHub Workers :: GitHub Actions</name>
-    <description>WorkerProvisioner and WorkerExecutionManager for GitHub Actions — dispatch case steps via workflow_dispatch and repository_dispatch</description>
+    <description>Quarkus CDI wiring for GitHub Actions worker — @Produces beans delegating to core POJOs</description>
 
     <dependencies>
+        <dependency>
+            <groupId>io.casehub</groupId>
+            <artifactId>casehub-workers-github-actions-core</artifactId>
+        </dependency>
         <dependency>
             <groupId>io.casehub</groupId>
             <artifactId>casehub-workers-common</artifactId>
         </dependency>
         <dependency>
             <groupId>io.casehub</groupId>
-            <artifactId>casehub-engine-api</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.casehub</groupId>
             <artifactId>casehub-engine-common</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.casehub</groupId>
-            <artifactId>casehub-worker-api</artifactId>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-arc</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-vertx</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.smallrye.reactive</groupId>
-            <artifactId>smallrye-mutiny-vertx-web-client</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>io.casehub</groupId>
-            <artifactId>casehub-workers-testing</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-junit</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.assertj</groupId>
-            <artifactId>assertj-core</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-core</artifactId>
-            <scope>test</scope>
         </dependency>
     </dependencies>
 

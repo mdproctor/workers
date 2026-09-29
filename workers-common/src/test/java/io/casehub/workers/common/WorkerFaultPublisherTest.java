@@ -9,8 +9,8 @@ import io.casehub.worker.api.WorkerFunction;
 import io.casehub.worker.api.WorkerResult;
 import io.casehub.workers.common.WorkerFaultEvent;
 import io.casehub.engine.common.internal.model.CaseInstance;
-import io.vertx.mutiny.core.eventbus.EventBus;
 import java.time.Instant;
+import java.util.function.Consumer;
 import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
@@ -20,9 +20,8 @@ class WorkerFaultPublisherTest {
 
     @Test
     void fault_fromContext_publishesToGivenAddress() {
-        EventBus eventBus = mock(EventBus.class);
-        WorkerFaultPublisher publisher = new WorkerFaultPublisher();
-        publisher.eventBus = eventBus;
+        @SuppressWarnings("unchecked") Consumer<WorkerFaultEvent> consumer = mock(Consumer.class);
+        WorkerFaultPublisher publisher = new WorkerFaultPublisher(consumer);
 
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
@@ -30,11 +29,10 @@ class WorkerFaultPublisherTest {
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1", null);
         Capability capability = Capability.of("run-script", "", "");
 
-        publisher.fault("casehub.workers.test.fault", ctx, capability, 99L,
-            new RuntimeException("boom"));
+        publisher.fault(ctx, capability, 99L, new RuntimeException("boom"));
 
         ArgumentCaptor<WorkerFaultEvent> captor = ArgumentCaptor.forClass(WorkerFaultEvent.class);
-        verify(eventBus).publish(eq("casehub.workers.test.fault"), captor.capture());
+        verify(consumer).accept(captor.capture());
 
         WorkerFaultEvent event = captor.getValue();
         assertThat(event.caseInstance()).isSameAs(instance);
@@ -46,9 +44,8 @@ class WorkerFaultPublisherTest {
 
     @Test
     void fault_fromPendingCompletion_publishesToFaultAddress() {
-        EventBus eventBus = mock(EventBus.class);
-        WorkerFaultPublisher publisher = new WorkerFaultPublisher();
-        publisher.eventBus = eventBus;
+        @SuppressWarnings("unchecked") Consumer<WorkerFaultEvent> consumer = mock(Consumer.class);
+        WorkerFaultPublisher publisher = new WorkerFaultPublisher(consumer);
 
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
@@ -56,7 +53,7 @@ class WorkerFaultPublisherTest {
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1", null);
         Capability capability = Capability.of("send-webhook", "", "");
         PendingCompletion pending = new PendingCompletion(
-            "dispatch-1", "http", "casehub.workers.http.fault",
+            "dispatch-1", "http",
             ctx, "token", capability, 42L,
             Instant.now(), Instant.now().plusSeconds(3600), Map.of());
         Throwable cause = new RuntimeException("timeout");
@@ -64,7 +61,7 @@ class WorkerFaultPublisherTest {
         publisher.fault(pending, cause);
 
         ArgumentCaptor<WorkerFaultEvent> captor = ArgumentCaptor.forClass(WorkerFaultEvent.class);
-        verify(eventBus).publish(eq("casehub.workers.http.fault"), captor.capture());
+        verify(consumer).accept(captor.capture());
 
         WorkerFaultEvent event = captor.getValue();
         assertThat(event.caseInstance()).isSameAs(instance);
@@ -77,9 +74,8 @@ class WorkerFaultPublisherTest {
 
     @Test
     void fault_address_passesBindingNameFromContext() {
-        EventBus eventBus = mock(EventBus.class);
-        WorkerFaultPublisher publisher = new WorkerFaultPublisher();
-        publisher.eventBus = eventBus;
+        @SuppressWarnings("unchecked") Consumer<WorkerFaultEvent> consumer = mock(Consumer.class);
+        WorkerFaultPublisher publisher = new WorkerFaultPublisher(consumer);
 
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
@@ -89,18 +85,17 @@ class WorkerFaultPublisherTest {
         Capability capability = Capability.of("test-cap", "", "");
         Throwable cause = new RuntimeException("test");
 
-        publisher.fault("test.fault", ctx, capability, 42L, cause);
+        publisher.fault(ctx, capability, 42L, cause);
 
         ArgumentCaptor<WorkerFaultEvent> captor = ArgumentCaptor.forClass(WorkerFaultEvent.class);
-        verify(eventBus).publish(eq("test.fault"), captor.capture());
+        verify(consumer).accept(captor.capture());
         assertThat(captor.getValue().bindingName()).isEqualTo("binding-x");
     }
 
     @Test
     void fault_pending_passesBindingNameFromContext() {
-        EventBus eventBus = mock(EventBus.class);
-        WorkerFaultPublisher publisher = new WorkerFaultPublisher();
-        publisher.eventBus = eventBus;
+        @SuppressWarnings("unchecked") Consumer<WorkerFaultEvent> consumer = mock(Consumer.class);
+        WorkerFaultPublisher publisher = new WorkerFaultPublisher(consumer);
 
         CaseInstance instance = new CaseInstance();
         instance.setUuid(UUID.randomUUID());
@@ -109,7 +104,7 @@ class WorkerFaultPublisherTest {
             instance, worker, "hash-1", "t1", "binding-y");
         Capability capability = Capability.of("test-cap", "", "");
         PendingCompletion pending = new PendingCompletion(
-            "dispatch-1", "http", "casehub.workers.http.fault",
+            "dispatch-1", "http",
             ctx, "token", capability, 42L,
             Instant.now(), Instant.now().plusSeconds(3600), Map.of());
         Throwable cause = new RuntimeException("test");
@@ -117,7 +112,7 @@ class WorkerFaultPublisherTest {
         publisher.fault(pending, cause);
 
         ArgumentCaptor<WorkerFaultEvent> captor = ArgumentCaptor.forClass(WorkerFaultEvent.class);
-        verify(eventBus).publish(eq("casehub.workers.http.fault"), captor.capture());
+        verify(consumer).accept(captor.capture());
         assertThat(captor.getValue().bindingName()).isEqualTo("binding-y");
     }
 }

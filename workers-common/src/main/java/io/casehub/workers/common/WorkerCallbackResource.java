@@ -48,7 +48,7 @@ public class WorkerCallbackResource {
                 pending.callbackToken().getBytes(), token != null ? token.getBytes() : new byte[0])) {
             java.time.Duration remaining = java.time.Duration.between(java.time.Instant.now(), pending.expiresAt());
             if (!remaining.isNegative()) {
-                registry.register(pending.workerType(), pending.faultAddress(),
+                registry.register(pending.workerType(),
                     pending.correlationContext(),
                     pending.capability(), pending.eventLogId(),
                     remaining, pending.provisionerMeta());

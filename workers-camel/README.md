@@ -116,11 +116,9 @@ All faults — sync failures, async timeouts, explicit fault callbacks — funne
 ```
 Any fault source
        |
-CamelWorkerFaultPublisher
+WorkerFaultPublisher (Consumer<WorkerFaultEvent>)
        |
-  eventBus.publish(CAMEL_WORKER_FAULT)
-       |
-CamelWorkerFaultEventHandler (@ConsumeEvent, blocking)
+  WorkerFaultHandler (constructor-injected)
        |
   1. Persist WORKER_EXECUTION_FAILED EventLog
   2. Count prior failures for this (caseId, workerId, inputDataHash)
@@ -128,8 +126,8 @@ CamelWorkerFaultEventHandler (@ConsumeEvent, blocking)
        |                    |
       yes                  no
        |                    |
-  Vert.x timer         WORKER_RETRIES_EXHAUSTED
-  + emitOn(workerPool)    (case stalls — human intervention)
+  Thread.sleep         WORKER_RETRIES_EXHAUSTED
+  + resubmit              (case stalls — human intervention)
   + re-submit()
 ```
 
@@ -291,13 +289,11 @@ Request body:
 workers-camel/
   src/main/java/io/casehub/workers/camel/
     CamelWorkerConstants.java            WORKER_TYPE = "camel"
-    CamelWorkerEventBusAddresses.java    CAMEL_WORKER_FAULT address
     CamelWorkerRoute.java               SPI interface for Tier 1 registration
     CamelCapabilityResolver.java         3-tier tag → URI resolution
     CamelReactiveWorkerProvisioner.java  Capability probe (does the route exist?)
     CamelWorkerExecutionManager.java     Dispatch: sync (InOut) or async (InOnly)
-    CamelWorkerFaultPublisher.java       Publishes to CAMEL_WORKER_FAULT
-    CamelWorkerFaultEventHandler.java    Retry logic, exhaustion detection
+    CamelWorkerFaultPublisher.java       Publishes via Consumer<WorkerFaultEvent>
     CamelCompletionExpiryObserver.java   Routes async timeout → fault pipeline
     CamelFaultCallbackObserver.java      Routes REST fault callback → fault pipeline
     component/

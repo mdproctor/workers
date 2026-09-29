@@ -52,7 +52,7 @@ class K8sWorkerExecutionManagerTest {
     @BeforeEach
     void setUp() {
         manager = new K8sWorkerExecutionManager();
-        resolver = new JobDefinitionResolver();
+        resolver = new JobDefinitionResolver("default", 3600, 600, 0, "delete", 1_048_576, 262_144);
         registry = mock(AsyncWorkerCompletionRegistry.class);
         faultPublisher = mock(WorkerFaultPublisher.class);
         client = mock(KubernetesClient.class, RETURNS_DEEP_STUBS);
@@ -89,7 +89,7 @@ class K8sWorkerExecutionManagerTest {
         resolver.initialize(Map.of("report-gen", imageDef("report-gen")));
         PendingCompletion pending = mock(PendingCompletion.class);
         when(pending.dispatchId()).thenReturn("dispatch-1");
-        when(registry.register(anyString(), anyString(), any(), any(), any(), any(), any()))
+        when(registry.register(anyString(), any(), any(), any(), any(), any()))
             .thenReturn(pending);
         NamespaceableResource<Job> resource = mock(NamespaceableResource.class);
         when(client.resource(any(Job.class))).thenReturn(resource);
@@ -102,7 +102,6 @@ class K8sWorkerExecutionManagerTest {
             Map.of("key", "value"));
 
         verify(registry).register(eq(K8sWorkerConstants.WORKER_TYPE),
-            eq(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT),
             any(), any(), eq(1L), any(Duration.class), any());
         verify(resource).create();
     }
@@ -117,7 +116,7 @@ class K8sWorkerExecutionManagerTest {
             WorkerTestSupport.testCapability("k8s:missing"),
             Map.of());
 
-        verify(faultPublisher).fault(eq(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT),
+        verify(faultPublisher).fault(
             any(WorkerCorrelationContext.class), any(Capability.class), eq(1L),
             any(PermanentFaultException.class));
     }
@@ -127,7 +126,7 @@ class K8sWorkerExecutionManagerTest {
         resolver.initialize(Map.of("test", imageDef("test")));
         PendingCompletion pending = mock(PendingCompletion.class);
         when(pending.dispatchId()).thenReturn("dispatch-1");
-        when(registry.register(anyString(), anyString(), any(), any(), any(), any(), any()))
+        when(registry.register(anyString(), any(), any(), any(), any(), any()))
             .thenReturn(pending);
         NamespaceableResource<Job> resource = mock(NamespaceableResource.class);
         when(client.resource(any(Job.class))).thenReturn(resource);
@@ -141,7 +140,7 @@ class K8sWorkerExecutionManagerTest {
 
         verify(registry).complete("dispatch-1");
         ArgumentCaptor<Throwable> captor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(eq(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT),
+        verify(faultPublisher).fault(
             any(), any(), eq(1L), captor.capture());
         assertThat(captor.getValue()).isInstanceOf(PermanentFaultException.class);
     }
@@ -151,7 +150,7 @@ class K8sWorkerExecutionManagerTest {
         resolver.initialize(Map.of("test", imageDef("test")));
         PendingCompletion pending = mock(PendingCompletion.class);
         when(pending.dispatchId()).thenReturn("dispatch-1");
-        when(registry.register(anyString(), anyString(), any(), any(), any(), any(), any()))
+        when(registry.register(anyString(), any(), any(), any(), any(), any()))
             .thenReturn(pending);
         NamespaceableResource<Job> resource = mock(NamespaceableResource.class);
         when(client.resource(any(Job.class))).thenReturn(resource);
@@ -165,7 +164,7 @@ class K8sWorkerExecutionManagerTest {
 
         verify(registry).complete("dispatch-1");
         ArgumentCaptor<Throwable> captor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(eq(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT),
+        verify(faultPublisher).fault(
             any(), any(), eq(1L), captor.capture());
         assertThat(captor.getValue()).isNotInstanceOf(PermanentFaultException.class);
     }
@@ -182,7 +181,7 @@ class K8sWorkerExecutionManagerTest {
             Map.of("large", "x".repeat(100)));
 
         ArgumentCaptor<Throwable> captor = ArgumentCaptor.forClass(Throwable.class);
-        verify(faultPublisher).fault(eq(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT),
+        verify(faultPublisher).fault(
             any(), any(), eq(1L), captor.capture());
         assertThat(captor.getValue()).isInstanceOf(PermanentFaultException.class);
         assertThat(captor.getValue().getMessage()).contains("exceeds maxInputBytes");
@@ -202,7 +201,7 @@ class K8sWorkerExecutionManagerTest {
 
         ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             ArgumentCaptor.forClass(WorkerCorrelationContext.class);
-        verify(faultPublisher).fault(eq(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT),
+        verify(faultPublisher).fault(
             ctxCaptor.capture(), any(Capability.class), eq(1L),
             any(PermanentFaultException.class));
         assertThat(ctxCaptor.getValue().bindingName()).isEqualTo("binding-x");
@@ -220,7 +219,7 @@ class K8sWorkerExecutionManagerTest {
 
         ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             ArgumentCaptor.forClass(WorkerCorrelationContext.class);
-        verify(faultPublisher).fault(eq(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT),
+        verify(faultPublisher).fault(
             ctxCaptor.capture(), any(Capability.class), eq(1L),
             any(PermanentFaultException.class));
         assertThat(ctxCaptor.getValue().bindingName()).isNull();
@@ -249,14 +248,13 @@ class K8sWorkerExecutionManagerTest {
         instance.setUuid(CASE_ID);
 
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
-            .thenReturn(instance);
+            .thenReturn(java.util.Optional.of(instance));
         mockK8sJobListEmpty();
         mockJobCreation();
 
         manager.schedulePersistedEvent(eventLog);
 
         verify(registry).register(eq(K8sWorkerConstants.WORKER_TYPE),
-            eq(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT),
             any(), any(), eq(1L), any(Duration.class), any());
     }
 
@@ -268,7 +266,7 @@ class K8sWorkerExecutionManagerTest {
 
         manager.schedulePersistedEvent(eventLog);
 
-        verify(registry, never()).register(any(), any(), any(), any(), any(), any(), any());
+        verify(registry, never()).register(any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -276,12 +274,12 @@ class K8sWorkerExecutionManagerTest {
         resolver.initialize(Map.of("test", imageDef("test")));
         EventLog eventLog = buildScheduledEventLog(CASE_ID, "t1", "w1", "k8s:test", 1L);
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
-            .thenReturn(null);
+            .thenReturn(java.util.Optional.empty());
         mockK8sJobListEmpty();
 
         manager.schedulePersistedEvent(eventLog);
 
-        verify(registry, never()).register(any(), any(), any(), any(), any(), any(), any());
+        verify(registry, never()).register(any(), any(), any(), any(), any(), any());
     }
 
     @Test
@@ -291,7 +289,7 @@ class K8sWorkerExecutionManagerTest {
 
         manager.schedulePersistedEvent(eventLog);
 
-        verify(registry, never()).register(any(), any(), any(), any(), any(), any(), any());
+        verify(registry, never()).register(any(), any(), any(), any(), any(), any());
     }
 
     // --- bindingName in schedulePersistedEvent ---
@@ -305,7 +303,7 @@ class K8sWorkerExecutionManagerTest {
         instance.setUuid(CASE_ID);
 
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
-            .thenReturn(instance);
+            .thenReturn(java.util.Optional.of(instance));
         mockK8sJobListEmpty();
         mockJobCreation();
 
@@ -314,7 +312,6 @@ class K8sWorkerExecutionManagerTest {
         ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             ArgumentCaptor.forClass(WorkerCorrelationContext.class);
         verify(registry).register(eq(K8sWorkerConstants.WORKER_TYPE),
-            eq(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT),
             ctxCaptor.capture(), any(), eq(1L), any(Duration.class), any());
         assertThat(ctxCaptor.getValue().bindingName()).isEqualTo("spe-binding");
     }
@@ -327,7 +324,7 @@ class K8sWorkerExecutionManagerTest {
         instance.setUuid(CASE_ID);
 
         when(caseInstanceRepository.findByUuid(CASE_ID, "t1"))
-            .thenReturn(instance);
+            .thenReturn(java.util.Optional.of(instance));
         mockK8sJobListEmpty();
         mockJobCreation();
 
@@ -336,7 +333,6 @@ class K8sWorkerExecutionManagerTest {
         ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             ArgumentCaptor.forClass(WorkerCorrelationContext.class);
         verify(registry).register(eq(K8sWorkerConstants.WORKER_TYPE),
-            eq(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT),
             ctxCaptor.capture(), any(), eq(1L), any(Duration.class), any());
         assertThat(ctxCaptor.getValue().bindingName()).isNull();
     }
@@ -399,7 +395,7 @@ class K8sWorkerExecutionManagerTest {
     private void mockJobCreation() {
         PendingCompletion pending = mock(PendingCompletion.class);
         when(pending.dispatchId()).thenReturn("dispatch-recovery");
-        when(registry.register(anyString(), anyString(), any(), any(), any(), any(), any()))
+        when(registry.register(anyString(), any(), any(), any(), any(), any()))
             .thenReturn(pending);
         NamespaceableResource<Job> resource = mock(NamespaceableResource.class);
         when(client.resource(any(Job.class))).thenReturn(resource);

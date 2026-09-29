@@ -51,7 +51,7 @@ class CamelWorkerExecutionManagerTest {
 
         manager.submit(1L, instance, worker, cap, Map.of());
 
-        verify(faultPublisher).fault(eq(CamelWorkerEventBusAddresses.CAMEL_WORKER_FAULT),
+        verify(faultPublisher).fault(
             any(WorkerCorrelationContext.class), eq(cap), eq(1L), any(WorkerProvisioningException.class));
     }
 
@@ -68,7 +68,7 @@ class CamelWorkerExecutionManagerTest {
 
         org.mockito.ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             org.mockito.ArgumentCaptor.forClass(WorkerCorrelationContext.class);
-        verify(faultPublisher).fault(eq(CamelWorkerEventBusAddresses.CAMEL_WORKER_FAULT),
+        verify(faultPublisher).fault(
             ctxCaptor.capture(), eq(cap), eq(1L), any(WorkerProvisioningException.class));
         assertThat(ctxCaptor.getValue().bindingName()).isEqualTo("binding-x");
     }
@@ -84,7 +84,7 @@ class CamelWorkerExecutionManagerTest {
 
         org.mockito.ArgumentCaptor<WorkerCorrelationContext> ctxCaptor =
             org.mockito.ArgumentCaptor.forClass(WorkerCorrelationContext.class);
-        verify(faultPublisher).fault(eq(CamelWorkerEventBusAddresses.CAMEL_WORKER_FAULT),
+        verify(faultPublisher).fault(
             ctxCaptor.capture(), eq(cap), eq(1L), any(WorkerProvisioningException.class));
         assertThat(ctxCaptor.getValue().bindingName()).isNull();
     }

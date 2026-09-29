@@ -27,7 +27,7 @@ class CamelWorkerRuntimeTest {
     void initialize_transitionsToRunning() {
         CamelWorkerRuntime runtime = new CamelWorkerRuntime(createResolver());
 
-        runtime.initialize().await().indefinitely();
+        runtime.initialize();
 
         assertThat(runtime.status()).isEqualTo(WorkerRuntimeStatus.RUNNING);
     }
@@ -38,7 +38,7 @@ class CamelWorkerRuntimeTest {
         resolver.configCapabilities = Map.of("send-email", "direct:send-email");
         CamelWorkerRuntime runtime = new CamelWorkerRuntime(resolver);
 
-        runtime.initialize().await().indefinitely();
+        runtime.initialize();
 
         assertThat(runtime.capabilities()).contains("send-email");
     }
@@ -46,9 +46,9 @@ class CamelWorkerRuntimeTest {
     @Test
     void shutdown_transitionsToStopped() {
         CamelWorkerRuntime runtime = new CamelWorkerRuntime(createResolver());
-        runtime.initialize().await().indefinitely();
+        runtime.initialize();
 
-        runtime.shutdown().await().indefinitely();
+        runtime.shutdown();
 
         assertThat(runtime.status()).isEqualTo(WorkerRuntimeStatus.STOPPED);
     }

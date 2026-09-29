@@ -70,7 +70,7 @@ class McpWorkerRuntimeTest {
         when(toolsResponse.getHeader("Content-Type")).thenReturn("application/json");
         when(request.sendJson(any())).thenReturn(Uni.createFrom().item(toolsResponse));
 
-        runtime.initialize().await().indefinitely();
+        runtime.initialize();
 
         assertThat(runtime.status()).isEqualTo(WorkerRuntimeStatus.RUNNING);
         assertThat(runtime.capabilities())
@@ -86,7 +86,7 @@ class McpWorkerRuntimeTest {
         McpSession session = new McpSession("session-abc", McpWorkerConstants.PROTOCOL_VERSION);
         when(sessionManager.getOrInitialize("slack")).thenReturn(Uni.createFrom().item(session));
 
-        runtime.initialize().await().indefinitely();
+        runtime.initialize();
 
         assertThat(runtime.status()).isEqualTo(WorkerRuntimeStatus.RUNNING);
         assertThat(runtime.capabilities()).containsExactlyInAnyOrder("mcp:slack:send-message");
@@ -103,7 +103,7 @@ class McpWorkerRuntimeTest {
         when(sessionManager.getOrInitialize("slack"))
             .thenReturn(Uni.createFrom().failure(new RuntimeException("Connection refused")));
 
-        runtime.initialize().await().indefinitely();
+        runtime.initialize();
 
         assertThat(runtime.status()).isEqualTo(WorkerRuntimeStatus.FAULTED);
         assertThat(runtime.capabilities()).isEmpty();
@@ -128,7 +128,7 @@ class McpWorkerRuntimeTest {
         when(toolsResponse.getHeader("Content-Type")).thenReturn("application/json");
         when(request.sendJson(any())).thenReturn(Uni.createFrom().item(toolsResponse));
 
-        runtime.initialize().await().indefinitely();
+        runtime.initialize();
 
         assertThat(runtime.status()).isEqualTo(WorkerRuntimeStatus.RUNNING);
         assertThat(runtime.capabilities()).containsExactly("mcp:slack:send-message");
@@ -149,7 +149,7 @@ class McpWorkerRuntimeTest {
         when(errorResponse.getHeader("Content-Type")).thenReturn("application/json");
         when(request.sendJson(any())).thenReturn(Uni.createFrom().item(errorResponse));
 
-        runtime.initialize().await().indefinitely();
+        runtime.initialize();
 
         assertThat(runtime.status()).isEqualTo(WorkerRuntimeStatus.RUNNING);
         // Falls back to config-declared tools
@@ -165,11 +165,11 @@ class McpWorkerRuntimeTest {
         McpSession session = new McpSession("session-abc", McpWorkerConstants.PROTOCOL_VERSION);
         when(sessionManager.getOrInitialize("slack")).thenReturn(Uni.createFrom().item(session));
 
-        runtime.initialize().await().indefinitely();
+        runtime.initialize();
         assertThat(runtime.status()).isEqualTo(WorkerRuntimeStatus.RUNNING);
 
         // Second call — verify no additional session initialization
-        runtime.initialize().await().indefinitely();
+        runtime.initialize();
         verify(sessionManager, org.mockito.Mockito.times(1)).getOrInitialize("slack");
     }
 
@@ -183,10 +183,10 @@ class McpWorkerRuntimeTest {
             .thenReturn(Uni.createFrom().failure(new RuntimeException("Connection refused")))
             .thenReturn(Uni.createFrom().item(new McpSession("session-abc", McpWorkerConstants.PROTOCOL_VERSION)));
 
-        runtime.initialize().await().indefinitely();
+        runtime.initialize();
         assertThat(runtime.status()).isEqualTo(WorkerRuntimeStatus.FAULTED);
 
-        runtime.initialize().await().indefinitely();
+        runtime.initialize();
         assertThat(runtime.status()).isEqualTo(WorkerRuntimeStatus.RUNNING);
         assertThat(runtime.capabilities()).containsExactly("mcp:slack:send-message");
     }
@@ -201,10 +201,10 @@ class McpWorkerRuntimeTest {
         when(sessionManager.getOrInitialize("slack")).thenReturn(Uni.createFrom().item(session));
         when(sessionManager.shutdown()).thenReturn(Uni.createFrom().voidItem());
 
-        runtime.initialize().await().indefinitely();
+        runtime.initialize();
         assertThat(runtime.status()).isEqualTo(WorkerRuntimeStatus.RUNNING);
 
-        runtime.shutdown().await().indefinitely();
+        runtime.shutdown();
         assertThat(runtime.status()).isEqualTo(WorkerRuntimeStatus.STOPPED);
     }
 

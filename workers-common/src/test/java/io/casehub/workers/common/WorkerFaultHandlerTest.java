@@ -18,10 +18,8 @@ import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.internal.model.CaseInstance;
 import io.casehub.engine.common.spi.EventLogRepository;
 import io.casehub.engine.common.spi.scheduler.WorkerExecutionManager;
-import io.vertx.core.Vertx;
 import java.util.Map;
 import java.util.UUID;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -32,7 +30,6 @@ class WorkerFaultHandlerTest {
     private WorkerFaultHandler handler;
     private WorkerRetrySupport retrySupport;
     private WorkerExecutionManager workerExecutionManager;
-    private Vertx vertx;
     private EventLogRepository eventLogRepository;
 
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -41,20 +38,9 @@ class WorkerFaultHandlerTest {
     void setUp() {
         retrySupport = mock(WorkerRetrySupport.class);
         workerExecutionManager = mock(WorkerExecutionManager.class);
-        vertx = Vertx.vertx();
         eventLogRepository = mock(EventLogRepository.class);
 
-        handler = new WorkerFaultHandler();
-        handler.retrySupport = retrySupport;
-        handler.workerExecutionManager = workerExecutionManager;
-        handler.vertx = vertx;
-        handler.eventLogRepository = eventLogRepository;
-
-}
-
-    @AfterEach
-    void tearDown() {
-        vertx.close();
+        handler = new WorkerFaultHandler(retrySupport, workerExecutionManager, eventLogRepository);
     }
 
     @Test

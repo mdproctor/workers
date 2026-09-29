@@ -25,7 +25,7 @@ class WorkerCompletionExpiryObserverTest {
         Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync<>(Map.class, Map.class, (ctx, scope) -> WorkerResult.of(Map.of()))).build();
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1", null);
         PendingCompletion pending = new PendingCompletion(
-            "dispatch-1", "http", "casehub.workers.http.fault",
+            "dispatch-1", "http",
             ctx, "token", Capability.of("cap", "", ""), 42L,
             Instant.now(), Instant.now().plusSeconds(3600), Map.of());
 

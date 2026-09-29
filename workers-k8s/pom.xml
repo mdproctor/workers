@@ -18,6 +18,10 @@
     <dependencies>
         <dependency>
             <groupId>io.casehub</groupId>
+            <artifactId>casehub-workers-k8s-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.casehub</groupId>
             <artifactId>casehub-workers-common</artifactId>
         </dependency>
         <dependency>

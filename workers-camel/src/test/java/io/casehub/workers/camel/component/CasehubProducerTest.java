@@ -9,7 +9,7 @@ import io.casehub.worker.api.Worker;
 import io.casehub.worker.api.WorkerFunction;
 import io.casehub.worker.api.WorkerResult;
 import io.casehub.engine.common.internal.model.CaseInstance;
-import io.casehub.workers.camel.CamelWorkerEventBusAddresses;
+
 import io.casehub.workers.common.AsyncWorkerCompletionRegistry;
 import io.casehub.workers.common.CasehubWorkerHeaders;
 import io.casehub.workers.common.CompletionExpiredEvent;
@@ -53,7 +53,6 @@ class CasehubProducerTest {
         testPending = new PendingCompletion(
             "test-dispatch-id",
             "camel",
-            CamelWorkerEventBusAddresses.CAMEL_WORKER_FAULT,
             ctx,
             UUID.randomUUID().toString(),
             Capability.of("cap", "", ""),

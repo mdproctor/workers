@@ -10,7 +10,7 @@ Integration-tier collection of CaseHub worker implementations. Each module provi
 
 **Tier:** Integration (alongside `claudony` and `casehub-openclaw` in the build order)
 
-**Design philosophy:** Thin wrappers — each worker module translates a CaseHub case step dispatch into the target runtime's protocol and fires `WorkflowExecutionCompleted` on `WORKER_EXECUTION_FINISHED` when done. No domain logic here.
+**Design philosophy:** Thin wrappers — each worker module translates a CaseHub case step dispatch into the target runtime's protocol and fires `WorkflowExecutionCompleted` via `Consumer<WorkflowExecutionCompleted>` when done. No domain logic here.
 
 **Spec:** `docs/specs/2026-06-08-casehub-workers-camel-design.md` — fully approved, 7 review cycles.
 
@@ -28,19 +28,28 @@ mvn --batch-mode deploy -DskipTests
 
 | Module | Artifact | Root package | Purpose |
 |--------|----------|-------------|---------|
-| `workers-common` | `casehub-workers-common` | `io.casehub.workers.common` | General async worker infrastructure — shared by all worker types |
-| `workers-http` | `casehub-workers-http` | `io.casehub.workers.http` | HTTP/webhook worker — 3-tier endpoint resolution, sync/async dispatch |
+| `workers-common-core` | `casehub-workers-common-core` | `io.casehub.workers.common` | Framework-neutral POJOs — zero CDI, zero Vert.x. WorkerFaultPublisher, WorkflowCompletionPublisher, WorkerRetrySupport, WorkerFaultHandler, WorkerLifecycleOrchestrator, PendingCompletion, WorkerCorrelationContext, WorkerFaultEvent |
+| `workers-common` | `casehub-workers-common` | `io.casehub.workers.common` | Quarkus CDI wiring — @Produces core POJOs with EventBus consumers, @Scheduled ticks |
+| `workers-http-core` | `casehub-workers-http-core` | `io.casehub.workers.http` | Framework-neutral HTTP worker POJOs — HttpEndpointResolver, HttpWorkerExecutionManager, HttpWorkerRuntime, ExchangeMode, ResolvedEndpoint. JDK HttpClient dispatch (replaces Vert.x WebClient) |
+| `workers-http` | `casehub-workers-http` | `io.casehub.workers.http` | Quarkus CDI wiring for HTTP worker — @Produces core POJOs |
+| `workers-camel-core` | `casehub-workers-camel-core` | `io.casehub.workers.camel` | Framework-neutral Camel worker types — CamelExchangeWorkerFunction, CamelWorkerConstants. Minimal extraction (Camel runtime stays in Quarkus module) |
 | `workers-camel` | `casehub-workers-camel` | `io.casehub.workers.camel` | Apache Camel worker — 300+ connectors |
-| `workers-github-actions` | `casehub-workers-github-actions` | `io.casehub.workers.githubactions` | GitHub Actions worker — workflow_dispatch + repository_dispatch |
-| `workers-mcp` | `casehub-workers-mcp` | `io.casehub.workers.mcp` | MCP worker — dispatch case steps to MCP server tools via Streamable HTTP |
-| `workers-script` | `casehub-workers-script` | `io.casehub.workers.script` | Script worker — dispatch case steps to local subprocesses (shell, Python, JS) |
+| `workers-github-actions-core` | `casehub-workers-github-actions-core` | `io.casehub.workers.githubactions` | Framework-neutral GitHub Actions POJOs — GitHubActionsWorkerExecutionManager, GitHubActionsWorkerRuntime, GitHubActionsTokenResolver. JDK HttpClient dispatch |
+| `workers-github-actions` | `casehub-workers-github-actions` | `io.casehub.workers.githubactions` | Quarkus CDI wiring for GitHub Actions worker |
+| `workers-mcp-core` | `casehub-workers-mcp-core` | `io.casehub.workers.mcp` | Framework-neutral MCP worker POJOs — McpWorkerExecutionManager, McpServerResolver, McpSession, McpSessionProvider (SPI), ServerInitResult, ResolvedMcpServer. JDK HttpClient dispatch |
+| `workers-mcp` | `casehub-workers-mcp` | `io.casehub.workers.mcp` | Quarkus CDI wiring for MCP worker |
+| `workers-script-core` | `casehub-workers-script-core` | `io.casehub.workers.script` | Framework-neutral script worker POJOs — ScriptWorkerExecutionManager, ScriptDefinitionResolver, ScriptDefinition, ScriptWorkerRuntime. ProcessBuilder dispatch |
+| `workers-script` | `casehub-workers-script` | `io.casehub.workers.script` | Quarkus CDI wiring for Script worker |
+| `workers-k8s-core` | `casehub-workers-k8s-core` | `io.casehub.workers.k8s` | Framework-neutral K8s job definitions — JobDefinition, JobDefinitionResolver, CleanupPolicy. No fabric8 client (stays in Quarkus module) |
 | `workers-k8s` | `casehub-workers-k8s` | `io.casehub.workers.k8s` | Kubernetes Job worker — dispatch case steps as K8s Jobs via fabric8 client, watch-based completion |
-| `workers-scenario` | `casehub-workers-scenario` | `io.casehub.workers.scenario` | Scenario worker — dispatch case steps as scenario executions on casehub-pages via GraphQL |
+| `workers-scenario-core` | `casehub-workers-scenario-core` | `io.casehub.workers.scenario` | Framework-neutral scenario worker POJOs — ScenarioWorkerExecutionManager, ScenarioEndpointResolver, ResolvedScenarioEndpoint, ScenarioWorkerRuntime. JDK HttpClient dispatch |
+| `workers-scenario` | `casehub-workers-scenario` | `io.casehub.workers.scenario` | Quarkus CDI wiring for Scenario worker |
+| `workers-spring` | `casehub-workers-spring` | `io.casehub.workers.spring` | Consolidated Spring Boot auto-configuration — 6 @AutoConfiguration classes (Common, HTTP, GitHubActions, MCP, Scenario, K8s). Depends on all -core modules. @ConditionalOnClass guards per worker type |
 | `workers-testing` | `casehub-workers-testing` | `io.casehub.workers.testing` | Shared test fixtures — **test scope only, never compile/runtime** |
 
 Sub-packages follow function: `.registry`, `.callback`, `.fault`, `.route`, `.component` as needed within each root package.
 
-**Build order:** `workers-common` must be first in parent POM `<modules>` — all others depend on it.
+**Build order:** `workers-common-core` → `workers-common` → per-type `-core` → per-type Quarkus → `workers-spring` → `workers-testing`. Each `-core` module must precede its Quarkus counterpart.
 
 ## Engine Integration — Two SPIs, Two Call Sites
 
@@ -57,10 +66,10 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 
 | Type | Purpose |
 |------|---------|
-| `PendingCompletion` | Registry entry per async dispatch — carries `dispatchId`, `workerType`, `faultAddress`, `callbackToken`, `capability`, `eventLogId`. Self-routing: `faultAddress` enables generic observers without per-module filtering |
+| `PendingCompletion` | Registry entry per async dispatch — carries `dispatchId`, `workerType`, `correlationContext`, `callbackToken`, `capability`, `eventLogId`. Generic observers filter by `workerType` |
 | `WorkerCorrelationContext` | Per-dispatch context — `CaseInstance`, `Worker`, `idempotency`, `tenancyId`, `bindingName`. `bindingName` is nullable — null means engine falls back to `findMatchingCapabilityBinding()` |
 | `AsyncWorkerCompletionRegistry` | In-memory pending completion store; `expireStale()` fires `CompletionExpiredEvent` CDI async |
-| `WorkflowCompletionPublisher` | Fires `WorkflowExecutionCompleted` on `WORKER_EXECUTION_FINISHED` via `eventBus.publish()` |
+| `WorkflowCompletionPublisher` | Fires `WorkflowExecutionCompleted` via `Consumer<WorkflowExecutionCompleted>` (constructor-injected) |
 | `WorkerCallbackResource` | `POST /workers/complete/{dispatchId}` — REST callback for external systems |
 | `WorkerRetrySupport` | Shared retry building blocks — `persistFailureLog`, `countFailedAttempts`, `publishRetriesExhausted`, `resolveRetryPolicy`, `computeBackoffDelayMs`, `parseRetryAfter` |
 | `PermanentFaultException` | Worker-agnostic "don't retry" signal — extracted from workers-http |
@@ -70,21 +79,19 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 | `CasehubWorkerHeaders` | Header name constants shared across all worker types |
 | `WorkerRuntime` | Lifecycle SPI — `initialize()`, `shutdown()`, `capabilities()`, `status()`. All worker types implement this. Orchestrator discovers beans via CDI |
 | `WorkerRuntimeStatus` | `PENDING` → `RUNNING` → `STOPPED`, `PENDING` → `FAULTED` → `STOPPED`, `FAULTED` → `RUNNING` (recovery). Aligned with SW 1.0 vocabulary |
-| `WorkerLifecycleOrchestrator` | `@ApplicationScoped` — discovers all `WorkerRuntime` beans, calls `initialize()` at startup (`@Priority(APPLICATION + 10)`), `shutdown()` at `@PreDestroy`. Sequential across types, fail-open per worker |
+| `WorkerLifecycleOrchestrator` | Constructor-injected `(List<WorkerRuntime>, Duration)` — parallel `initialize()` via virtual threads with per-runtime timeouts, `shutdown()` at `@PreDestroy`. Fault-isolated per worker |
 | `WorkerCapabilityResolver<T>` | Tenancy-aware endpoint resolution SPI — `resolve(capabilityTag, tenancyId)`, `firstMatch(capabilities, tenancyId)`, `capabilities()`. All four worker types implement this. HTTP and MCP add EndpointRegistry as Tier 3; Camel and Script pass tenancyId through |
 | `WorkerFaultEvent` | Local fault event record — `caseInstance`, `worker`, `capability`, `inputDataHash`, `eventLogId`, `cause`, `bindingName`. `bindingName` propagated from `WorkerCorrelationContext` via `WorkerFaultPublisher` so the fault handler can thread it through retry re-dispatch and retries-exhausted |
-| `WorkerFaultPublisher` | Generic fault publisher — parameterized by fault address. Publishes `WorkerFaultEvent`. Two overloads: `fault(faultAddress, ctx, capability, eventLogId, cause)` and `fault(pending, cause)` |
-| `WorkerFaultHandler` | Shared fault handler body — persist → PermanentFaultException check → count → RetryAfterException check → retry-or-exhaust. Always uses `emitOn(workerPool)` before re-dispatch. Uses `event.bindingName()` for retry re-dispatch (6-arg `submit()`) and `publishRetriesExhausted()`. Per-module fault event handlers are 5-line stubs delegating here |
-| `WorkerCompletionExpiryObserver` | Generic `@ObservesAsync CompletionExpiredEvent` — routes via `faultAddress` from `PendingCompletion`. Replaces per-module expiry observers |
-| `WorkerFaultCallbackObserver` | Generic `@ObservesAsync FaultCallbackEvent` — routes via `faultAddress` from `PendingCompletion`. Replaces per-module callback observers |
+| `WorkerFaultPublisher` | Generic fault publisher via `Consumer<WorkerFaultEvent>` (constructor-injected). Two overloads: `fault(ctx, capability, eventLogId, cause)` and `fault(pending, cause)` |
+| `WorkerFaultHandler` | Shared fault handler body — constructor-injected `(WorkerRetrySupport, WorkerExecutionManager, EventLogRepository)`. persist → PermanentFaultException check → count → RetryAfterException check → retry-or-exhaust. Uses `Thread.sleep()` for backoff (runs on virtual threads). Uses `event.bindingName()` for retry re-dispatch (6-arg `submit()`) and `publishRetriesExhausted()` |
+| `WorkerCompletionExpiryObserver` | Generic `@ObservesAsync CompletionExpiredEvent` — routes via `WorkerFaultPublisher`. Replaces per-module expiry observers |
+| `WorkerFaultCallbackObserver` | Generic `@ObservesAsync FaultCallbackEvent` — routes via `WorkerFaultPublisher`. Replaces per-module callback observers |
 
 ## workers-camel Key Types
 
 | Type | Purpose |
 |------|---------|
 | `CamelWorkerConstants.WORKER_TYPE = "camel"` | workerType discriminator — passed to `register()`, used by CDI observers to filter events |
-| `CamelWorkerEventBusAddresses.CAMEL_WORKER_FAULT` | Separate fault address from Quartz's `WORKFLOW_EXECUTION_FAILED` |
-| `CamelWorkerFaultEventHandler` | `@ConsumeEvent(CAMEL_WORKER_FAULT, blocking=true)` — 5-line stub delegating to `WorkerFaultHandler` |
 | `CamelWorkerRuntime` | `WorkerRuntime` implementation — delegates to `CamelCapabilityResolver.initialize()` |
 
 ## workers-http Key Types
@@ -92,11 +99,9 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 | Type | Purpose |
 |------|---------|
 | `HttpWorkerConstants.WORKER_TYPE = "http"` | workerType discriminator |
-| `HttpWorkerEventBusAddresses.HTTP_WORKER_FAULT` | Separate fault address from Camel and Quartz |
 | `HttpWorkerRoute` | SPI interface for Tier 1 endpoint registration |
 | `HttpEndpointResolver` | 3-tier capability tag → `ResolvedEndpoint` resolution (SPI bean > config > EndpointRegistry). Registry lookup: `Path.of("http", capabilityTag)` with tenancyId. Protocol check: `EndpointProtocol.HTTP` only |
 | `HttpWorkerExecutionManager` | Sync/async dispatch via Vert.x WebClient — reactive-native, no `emitOn` needed |
-| `HttpWorkerFaultEventHandler` | `@ConsumeEvent(HTTP_WORKER_FAULT, blocking=true)` — 5-line stub delegating to `WorkerFaultHandler` |
 | `ExchangeMode` | `SYNC` (default) or `ASYNC` |
 | `HttpWorkerRuntime` | `WorkerRuntime` implementation — delegates to `HttpEndpointResolver.initialize()` |
 
@@ -105,10 +110,8 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 | Type | Purpose |
 |------|---------|
 | `GitHubActionsWorkerConstants.WORKER_TYPE = "github-actions"` | workerType discriminator |
-| `GitHubActionsWorkerEventBusAddresses.GITHUB_ACTIONS_WORKER_FAULT` | Separate fault address from HTTP and Camel |
 | `GitHubActionsTokenResolver` | Per-org + global PAT resolution from config properties |
 | `GitHubActionsWorkerExecutionManager` | Dispatches via Vert.x WebClient — fire-and-forget on 204 |
-| `GitHubActionsWorkerFaultEventHandler` | `@ConsumeEvent(GITHUB_ACTIONS_WORKER_FAULT, blocking=true)` — 5-line stub delegating to `WorkerFaultHandler` |
 | `GitHubActionsReactiveWorkerProvisioner` | Capability probe — validates tags and token availability |
 | `GitHubActionsWorkerRuntime` | `WorkerRuntime` implementation — validates token config; FAULTED if no token, supports FAULTED → RUNNING recovery |
 
@@ -117,12 +120,10 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 | Type | Purpose |
 |------|---------|
 | `McpWorkerConstants.WORKER_TYPE = "mcp"` | workerType discriminator |
-| `McpWorkerEventBusAddresses.MCP_WORKER_FAULT` | Separate fault address from HTTP, Camel, and GitHub Actions |
 | `McpServerResolver` | Config + discovery + EndpointRegistry server registry — N:1 capability tag mapping (`mcp:<server>:<tool>` → `ResolvedMcpServer`). Resolution: config > EndpointRegistry (Tier 3). Registry lookup: `Path.of("mcp", serverName)` with tenancyId. Protocol check: `EndpointProtocol.MCP` only. `firstMatch()` validates server existence — tool validation deferred to dispatch. `discovery=auto` (default) calls `tools/list`; `discovery=manual` is config-only. `registerDiscoveredTools()` merges discovered tools with config allowlist |
 | `McpSessionManager` | `@ApplicationScoped` — MCP session lifecycle: eager init at startup (pre-warmed by `McpWorkerRuntime`), concurrent dedup via memoized Uni, session caching, shutdown via `McpWorkerRuntime.shutdown()` |
 | `McpSession` | Per-server runtime state — `sessionId`, `protocolVersion`, `AtomicLong requestIdCounter` |
 | `McpWorkerExecutionManager` | Dispatches `tools/call` via Vert.x WebClient — dual response parsing (JSON + SSE), `structuredContent` preferred |
-| `McpWorkerFaultEventHandler` | `@ConsumeEvent(MCP_WORKER_FAULT, blocking=true)` — 5-line stub delegating to `WorkerFaultHandler` |
 | `McpReactiveWorkerProvisioner` | Capability probe — validates tag in resolved set, server URL non-blank |
 | `McpWorkerRuntime` | `WorkerRuntime` implementation — parallel server init via `Uni.join().all()` with per-server error isolation (`ServerInitResult`), `tools/list` discovery, eager session pre-warming, delegated shutdown |
 | `ServerInitResult` | Per-server init outcome record — success (session + discovered tools) or failure (error). Enables partial-failure handling |
@@ -132,11 +133,9 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 | Type | Purpose |
 |------|---------|
 | `ScriptWorkerConstants.WORKER_TYPE = "script"` | workerType discriminator |
-| `ScriptWorkerEventBusAddresses.SCRIPT_WORKER_FAULT` | Separate fault address from HTTP, Camel, GitHub Actions, and MCP |
 | `ScriptDefinition` | Record — `name`, `command`, `args`, `workingDirectory`, `environment`, `timeoutSeconds`, `maxOutputBytes` |
 | `ScriptDefinitionResolver` | `WorkerCapabilityResolver<ScriptDefinition>` — config-driven (`casehub.workers.script.scripts.<name>.*`), capability tag prefix `script:` |
 | `ScriptWorkerExecutionManager` | Dispatches via `ProcessBuilder` — `runSubscriptionOn(workerPool)`, stdin JSON delivery, bounded stdout/stderr capture, exit code classification. Owns dedicated `ExecutorService` for stream draining (`@PostConstruct`/`@PreDestroy` lifecycle) |
-| `ScriptWorkerFaultEventHandler` | `@ConsumeEvent(SCRIPT_WORKER_FAULT, blocking=true)` — 5-line stub delegating to `WorkerFaultHandler` |
 | `ScriptReactiveWorkerProvisioner` | Capability probe — validates tag exists in resolver, command non-blank |
 | `ScriptWorkerRuntime` | `WorkerRuntime` implementation — delegates to `ScriptDefinitionResolver.initialize()`. Zero scripts → FAULTED |
 
@@ -145,7 +144,6 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 | Type | Purpose |
 |------|---------|
 | `K8sWorkerConstants.WORKER_TYPE = "k8s"` | workerType discriminator. Label constants: `CASE_ID_LABEL`, `WORKER_NAME_LABEL`, `EVENT_LOG_ID_LABEL`, `IDEMPOTENCY_LABEL` for recovery metadata. Annotation constant: `BINDING_NAME_ANNOTATION` — annotation (not label) because `bindingName` is user-defined and may exceed 63-char label limit |
-| `K8sWorkerEventBusAddresses.K8S_WORKER_FAULT` | Separate fault address from other workers |
 | `JobDefinition` | Config record — `name`, `namespace`, `image`/`template`, `command`, `args`, `cpuRequest`, `cpuLimit`, `memoryRequest`, `memoryLimit`, `timeoutSeconds`, `ttlAfterFinished`, `backoffLimit`, `maxOutputBytes`, `serviceAccount`, `labels`, `environment`, `cleanup` |
 | `CleanupPolicy` | `DELETE` (default) / `RETAIN` enum — eager delete + TTL safety net vs. manual cleanup |
 | `JobDefinitionResolver` | `WorkerCapabilityResolver<JobDefinition>` — config-driven (`casehub.workers.k8s.jobs.<name>.*`), capability tag prefix `k8s:`, single-tier. `@PostConstruct` eager initialization from Config — eliminates race between engine recovery and worker initialization |
@@ -155,18 +153,15 @@ Both are `@ApplicationScoped`. `ReactiveWorkerProvisioner` displaces `NoOpReacti
 | `K8sReactiveWorkerProvisioner` | Capability probe — validates tag exists in resolver |
 | `K8sWorkerRuntime` | `WorkerRuntime` implementation — validates K8s connectivity (`kubernetesClient.getApiVersion()`), starts per-namespace informers, FAULTED if no jobs configured or all informers failed |
 | `K8sJobInformerManager` | Shared informer lifecycle — `Map<String, SharedIndexInformer<Job>>` per unique namespace. Label selector: `app.kubernetes.io/managed-by=casehub`. Handles `onAdd` (reconnection), `onUpdate` (terminal state), `onDelete` (TTL vs. external deletion). `processTerminal()`: `registry.complete()` → capture Pod logs → publish completion/fault → delete Job (cleanup policy). `recoverFromJob()` for Job-metadata recovery after restart; `recoveredDispatchIds` (at-most-once guard via `ConcurrentHashMap.newKeySet()`). Injects `CaseInstanceRepository`. Full K8s fault classification: `BackoffLimitExceeded`, `DeadlineExceeded` (enriched with Pod waiting state), `OOMKilled`, `ImagePullBackOff`, eviction/preemption (retryable), API errors (403/404/422/409) |
-| `K8sWorkerFaultEventHandler` | `@ConsumeEvent(K8S_WORKER_FAULT, blocking=true)` — 5-line stub delegating to `WorkerFaultHandler` |
 
 ## workers-scenario Key Types
 
 | Type | Purpose |
 |------|---------|
 | `ScenarioWorkerConstants.WORKER_TYPE = "scenario"` | workerType discriminator |
-| `ScenarioWorkerEventBusAddresses.SCENARIO_WORKER_FAULT` | Separate fault address from other workers |
 | `ResolvedScenarioEndpoint` | Record — `name`, `url`, `timeoutSeconds` |
 | `ScenarioEndpointResolver` | `WorkerCapabilityResolver<ResolvedScenarioEndpoint>` — 3-tier with EndpointRegistry, tenant-aware. Config: `casehub.workers.scenario.endpoints.<name>.url`. Registry: `Path.of("scenario", name)`, protocol check `EndpointProtocol.SCENARIO` |
 | `ScenarioWorkerExecutionManager` | `@WorkerBackend @Priority(10)` — GraphQL dispatch via Vert.x WebClient, async callback completion via `AsyncWorkerCompletionRegistry` |
-| `ScenarioWorkerFaultEventHandler` | `@ConsumeEvent(SCENARIO_WORKER_FAULT, blocking=true)` — 5-line stub delegating to `WorkerFaultHandler` |
 | `ScenarioWorkerRuntime` | `WorkerRuntime` implementation — delegates to `ScenarioEndpointResolver.initializeFromConfig()` |
 
 ## Documentation
@@ -183,10 +178,9 @@ Update the relevant guide in the same session when implementation changes module
 - Each worker module activates by classpath presence (`@ApplicationScoped`, no config required to enable). All `WorkerExecutionManager` implementations must be annotated `@WorkerBackend @Priority(10)` and implement `supports(String capabilityName, String tenancyId)` — the composite manager discovers backends via this qualifier.
 - Workers are stateless — all state in the case instance or external system, never in provisioner beans.
 - `tenancyId` propagated through all calls — bind in Repository layer only (PP-20260520-e6a5f0).
-- Completion fires `eventBus.publish()` on `WORKER_EXECUTION_FINISHED` — never `request()`. Two consumers exist (`WorkflowExecutionCompletedHandler` + `PlanItemCompletionHandler`); `publish()` delivers to both.
-- Worker faults fire on worker-specific addresses (`CAMEL_WORKER_FAULT`, `HTTP_WORKER_FAULT`, `GITHUB_ACTIONS_WORKER_FAULT`, `MCP_WORKER_FAULT`, `SCRIPT_WORKER_FAULT`, `K8S_WORKER_FAULT`, `SCENARIO_WORKER_FAULT`), NOT `WORKFLOW_EXECUTION_FAILED` — Quartz listens on the latter and would double-process.
-- Fault pipeline is centralized in workers-common: `WorkerFaultPublisher` (parameterized by address), `WorkerFaultHandler` (shared retry body), `WorkerCompletionExpiryObserver` and `WorkerFaultCallbackObserver` (generic, route via `faultAddress` from `PendingCompletion`). Per-module fault handlers are 5-line stubs.
-- `WorkerFaultHandler` always uses `emitOn(Infrastructure.getDefaultWorkerPool())` before re-dispatch — correct for all workers regardless of whether their `submit()` is blocking or reactive. One unnecessary thread hop for reactive workers is negligible on the error path.
+- Completion fires via `Consumer<WorkflowExecutionCompleted>` (constructor-injected). Two engine consumers exist (`WorkflowExecutionCompletedHandler` + `PlanItemCompletionHandler`); Quarkus wiring delivers to both via CDI Event.
+- Fault pipeline is centralized in workers-common: `WorkerFaultPublisher` (fires via `Consumer<WorkerFaultEvent>`), `WorkerFaultHandler` (shared retry body, constructor-injected), `WorkerCompletionExpiryObserver` and `WorkerFaultCallbackObserver` (generic CDI observers). No per-module fault handlers — all deleted in Phase 1.
+- `WorkerFaultHandler` uses `Thread.sleep()` for backoff on virtual threads — correct for all workers.
 - Retry logic via `WorkerRetrySupport`: `failureCount < retryPolicy.maxAttempts()` (strict `<`); null policy defaults to `new RetryPolicy()` (3 attempts, 10s FIXED).
 - HTTP 4xx (except 429) throws `PermanentFaultException` — skips retry immediately.
 - HTTP 429 with `Retry-After` header throws `RetryAfterException` — overrides configured backoff delay.
@@ -221,7 +215,7 @@ Update the relevant guide in the same session when implementation changes module
 - EndpointRegistry path convention: HTTP uses `Path.of("http", capabilityTag)`, MCP uses `Path.of("mcp", serverName)`. Protocol check on descriptors: HTTP resolver accepts `EndpointProtocol.HTTP` only, MCP accepts `EndpointProtocol.MCP` only. Wrong protocol → ignored (returns empty), not faulted.
 - MCP firstMatch() for Tier 3: validates server existence via registry lookup, not individual tool existence. Tool validation deferred to dispatch time (same lazy pattern as 404 session recovery).
 - Provisioner tenancyId: uses `context.tenancyId()` from `ProvisionContext` (engine#530 shipped). Dispatch path (`submit()`) is fully tenant-aware via `CaseInstance.tenancyId`.
-- Worker lifecycle: all workers implement `WorkerRuntime`. `WorkerLifecycleOrchestrator` calls `initialize()` at startup, `shutdown()` at `@PreDestroy`. Initialization order across worker types is undefined.
+- Worker lifecycle: all workers implement `WorkerRuntime` (`void initialize()`, `void shutdown()`). `WorkerLifecycleOrchestrator` runs parallel initialization via virtual threads with per-runtime timeouts, `shutdown()` at `@PreDestroy`.
 - Worker runtime status reflects initialization outcome only — post-init dispatch failures go through the per-dispatch fault pipeline, not runtime status.
 - FAULTED → RUNNING recovery: calling `initialize()` on a FAULTED runtime retries initialization.
 - K8s recovery on restart: `processTerminal()` reconstructs `PendingCompletion` from Job labels when registry is empty. `recoveredDispatchIds` provides at-most-once guard via atomic `add()`. `CaseInstanceRepository.findByUuid()` loads the CaseInstance; `Worker` is reconstructed from labels with `WorkerFunction.NONE`.
@@ -236,11 +230,11 @@ Update the relevant guide in the same session when implementation changes module
 - Scenario library fetch: `GET /scenario/library/{name}/yaml` on the pages instance (base URL derived from GraphQL endpoint URL by stripping `/graphql` suffix).
 - Scenario callback URL: `{casehub.workers.callback-base-url}/workers/complete/{dispatchId}`.
 - Scenario endpoint resolution: 3-tier with EndpointRegistry, tenant-aware. `Path.of("scenario", name)`, protocol check `EndpointProtocol.SCENARIO`.
-- Worker faults fire on `SCENARIO_WORKER_FAULT` (`casehub.workers.scenario.fault`), same pattern as all other workers.
+- Worker faults fire via `Consumer<WorkerFaultEvent>` — centralized in `WorkerFaultPublisher`, no per-module fault addresses.
 
 ## Co-deployment
 
-All worker modules can co-deploy on the same classpath. `CompositeWorkerExecutionManager` (engine-runtime) discovers all `@WorkerBackend`-qualified `WorkerExecutionManager` beans and routes via `supports()`. CDI event cross-talk is prevented by `workerType` discriminator in `PendingCompletion` and per-module fault addresses.
+All worker modules can co-deploy on the same classpath. `CompositeWorkerExecutionManager` (engine-runtime) discovers all `@WorkerBackend`-qualified `WorkerExecutionManager` beans and routes via `supports()`. CDI event cross-talk is prevented by `workerType` discriminator in `PendingCompletion`.
 
 ## Cross-Repo Dependencies
 
@@ -248,7 +242,7 @@ All worker modules can co-deploy on the same classpath. `CompositeWorkerExecutio
 |---|---|
 | `casehub-worker-api` | `Worker`, `Capability`, `WorkerFunction`, `WorkerResult`, `WorkerOutcome` — Worker Foundation record types |
 | `casehub-engine-api` | `ReactiveWorkerProvisioner`, `ProvisionContext`, `ProvisionResult`, `WorkResult`, `CaseHubEventType`, `EventStreamType` |
-| `casehub-engine-common` | `WorkerExecutionManager`, `WorkerBackend`, `WorkerExecutionRoutingStrategy`, `WorkflowExecutionCompleted`, `CaseInstance`, `EventLog`, `EventBusAddresses`, `WorkerExecutionKeys`, `EventLogRepository` |
+| `casehub-engine-common` | `WorkerExecutionManager`, `WorkerBackend`, `WorkerExecutionRoutingStrategy`, `WorkflowExecutionCompleted`, `CaseInstance`, `EventLog`, `WorkerExecutionKeys`, `EventLogRepository` |
 | `casehub-platform-api` | `EndpointRegistry`, `EndpointDescriptor`, `EndpointPropertyKeys`, `EndpointProtocol`, `Path`, `TenancyConstants`, `ExecutionPolicy`, `RetryPolicy`, `BackoffStrategy` |
 | ~~engine#461~~ | ~~Composite `WorkerExecutionManager`~~ — shipped, all backends migrated to `@WorkerBackend` |
 | ~~engine#530~~ | ~~Add `tenancyId` to `ProvisionContext`~~ — shipped, wired in #15 |

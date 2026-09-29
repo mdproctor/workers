@@ -2,7 +2,6 @@ package io.casehub.workers.common;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import io.casehub.api.model.event.CaseHubEventType;
-import io.casehub.engine.common.internal.event.EventBusAddresses;
 import io.casehub.engine.common.internal.event.WorkerRetriesExhaustedEvent;
 import io.casehub.engine.common.internal.history.EventLog;
 import io.casehub.engine.common.internal.model.CaseInstance;
@@ -13,7 +12,6 @@ import io.casehub.platform.api.governance.RetryPolicy;
 import io.casehub.worker.api.Worker;
 import io.casehub.worker.api.WorkerFunction;
 import io.casehub.worker.api.WorkerResult;
-import io.vertx.mutiny.core.eventbus.EventBus;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
@@ -21,6 +19,7 @@ import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -144,22 +143,19 @@ class WorkerRetrySupportTest {
         }
     }
 
-    // ── Instance method tests — mock EventLogRepository and EventBus ──
+    // ── Instance method tests — mock EventLogRepository ──
 
     @Nested
     class PersistFailureLog {
 
         private EventLogRepository eventLogRepository;
-        private EventBus eventBus;
         private WorkerRetrySupport support;
 
         @BeforeEach
         void setUp() {
             eventLogRepository = mock(EventLogRepository.class);
-            eventBus = mock(EventBus.class);
-            support = new WorkerRetrySupport();
-            support.eventLogRepository = eventLogRepository;
-            support.eventBus = eventBus;
+            @SuppressWarnings("unchecked") Consumer<WorkerRetriesExhaustedEvent> consumer = mock(Consumer.class);
+            support = new WorkerRetrySupport(eventLogRepository, consumer);
         }
 
         @Test
@@ -203,9 +199,8 @@ class WorkerRetrySupportTest {
         @BeforeEach
         void setUp() {
             eventLogRepository = mock(EventLogRepository.class);
-            support = new WorkerRetrySupport();
-            support.eventLogRepository = eventLogRepository;
-            support.eventBus = mock(EventBus.class);
+            @SuppressWarnings("unchecked") Consumer<WorkerRetriesExhaustedEvent> consumer = mock(Consumer.class);
+            support = new WorkerRetrySupport(eventLogRepository, consumer);
         }
 
         @Test
@@ -251,10 +246,8 @@ class WorkerRetrySupportTest {
 
         @Test
         void publishesToCorrectAddressWithCorrectEvent() {
-            EventBus eventBus = mock(EventBus.class);
-            WorkerRetrySupport support = new WorkerRetrySupport();
-            support.eventBus = eventBus;
-            support.eventLogRepository = mock(EventLogRepository.class);
+            @SuppressWarnings("unchecked") Consumer<WorkerRetriesExhaustedEvent> consumer = mock(Consumer.class);
+            WorkerRetrySupport support = new WorkerRetrySupport(mock(EventLogRepository.class), consumer);
 
             UUID caseId = UUID.randomUUID();
             support.publishRetriesExhausted(caseId, "send-email", "hash-xyz",
@@ -262,7 +255,7 @@ class WorkerRetrySupportTest {
 
             ArgumentCaptor<WorkerRetriesExhaustedEvent> captor =
                 ArgumentCaptor.forClass(WorkerRetriesExhaustedEvent.class);
-            verify(eventBus).publish(eq(EventBusAddresses.WORKER_RETRIES_EXHAUSTED), captor.capture());
+            verify(consumer).accept(captor.capture());
 
             WorkerRetriesExhaustedEvent event = captor.getValue();
             assertThat(event.caseId()).isEqualTo(caseId);

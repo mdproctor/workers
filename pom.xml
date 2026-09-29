@@ -19,14 +19,24 @@
     <url>https://github.com/casehubio/workers</url>
 
     <modules>
+        <module>workers-common-core</module>
         <module>workers-common</module>
+        <module>workers-http-core</module>
         <module>workers-http</module>
+        <module>workers-camel-core</module>
         <module>workers-camel</module>
+        <module>workers-github-actions-core</module>
         <module>workers-github-actions</module>
+        <module>workers-mcp-core</module>
         <module>workers-mcp</module>
+        <module>workers-script-core</module>
         <module>workers-script</module>
+        <module>workers-k8s-core</module>
         <module>workers-k8s</module>
+        <module>workers-scenario-core</module>
         <module>workers-scenario</module>
+        <module>workers-spring</module>
+        <module>workers-spring-integration-test</module>
         <module>workers-testing</module>
     </modules>
 
@@ -36,6 +46,46 @@
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-workers-common-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-workers-script-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-workers-github-actions-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-workers-http-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-workers-camel-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-workers-scenario-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-workers-k8s-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.casehub</groupId>
+                <artifactId>casehub-workers-mcp-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
             <dependency>
                 <groupId>io.quarkus.platform</groupId>
                 <artifactId>quarkus-camel-bom</artifactId>

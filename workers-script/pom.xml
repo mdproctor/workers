@@ -18,29 +18,20 @@
     <dependencies>
         <dependency>
             <groupId>io.casehub</groupId>
-            <artifactId>casehub-workers-common</artifactId>
+            <artifactId>casehub-workers-script-core</artifactId>
         </dependency>
         <dependency>
             <groupId>io.casehub</groupId>
-            <artifactId>casehub-engine-api</artifactId>
+            <artifactId>casehub-workers-common</artifactId>
         </dependency>
         <dependency>
             <groupId>io.casehub</groupId>
             <artifactId>casehub-engine-common</artifactId>
         </dependency>
         <dependency>
-            <groupId>io.casehub</groupId>
-            <artifactId>casehub-worker-api</artifactId>
-        </dependency>
-        <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-arc</artifactId>
         </dependency>
-        <dependency>
-            <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-vertx</artifactId>
-        </dependency>
-
         <dependency>
             <groupId>io.casehub</groupId>
             <artifactId>casehub-workers-testing</artifactId>

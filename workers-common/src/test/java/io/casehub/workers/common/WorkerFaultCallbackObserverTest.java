@@ -25,7 +25,7 @@ class WorkerFaultCallbackObserverTest {
         Worker worker = Worker.builder().name("w1").capabilityNames("cap").function(new WorkerFunction.Sync<>(Map.class, Map.class, (ctx, scope) -> WorkerResult.of(Map.of()))).build();
         WorkerCorrelationContext ctx = new WorkerCorrelationContext(instance, worker, "hash-1", "t1", null);
         PendingCompletion pending = new PendingCompletion(
-            "dispatch-1", "camel", "casehub.workers.camel.fault",
+            "dispatch-1", "camel",
             ctx, "token", Capability.of("cap", "", ""), 42L,
             Instant.now(), Instant.now().plusSeconds(3600), Map.of());
         Throwable cause = new RuntimeException("callback fault");

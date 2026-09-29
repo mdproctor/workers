@@ -71,8 +71,7 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
             definition = resolver.resolve(capability.name(), instance.tenancyId);
         } catch (WorkerProvisioningException e) {
             WorkerCorrelationContext ctx = buildCtx(instance, worker, capability, inputData, bindingName);
-            faultPublisher.fault(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT,
-                                 ctx, capability, eventLogId, new PermanentFaultException(0, e.getMessage()));
+            faultPublisher.fault(ctx, capability, eventLogId, new PermanentFaultException(0, e.getMessage()));
             return;
         }
 
@@ -82,15 +81,13 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
         try {
             inputDataJson = objectMapper.writeValueAsString(inputData);
         } catch (Exception e) {
-            faultPublisher.fault(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT,
-                                 ctx, capability, eventLogId, new PermanentFaultException(0,
+            faultPublisher.fault(ctx, capability, eventLogId, new PermanentFaultException(0,
                                                                                           "Failed to serialize inputData: " + e.getMessage()));
             return;
         }
 
         if (inputDataJson.getBytes().length > maxInputBytes) {
-            faultPublisher.fault(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT,
-                                 ctx, capability, eventLogId, new PermanentFaultException(0,
+            faultPublisher.fault(ctx, capability, eventLogId, new PermanentFaultException(0,
                                                                                           "Input data (" + inputDataJson.getBytes().length
                                                                                           + " bytes) exceeds maxInputBytes limit (" + maxInputBytes + ")"));
             return;
@@ -99,7 +96,6 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
         try {
             PendingCompletion pending = registry.register(
                     K8sWorkerConstants.WORKER_TYPE,
-                    K8sWorkerEventBusAddresses.K8S_WORKER_FAULT,
                     ctx, capability, eventLogId,
                     Duration.ofSeconds(definition.timeoutSeconds() + 300),
                     Map.of(
@@ -121,8 +117,7 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
                 throw e;
             }
         } catch (Exception t) {
-            faultPublisher.fault(K8sWorkerEventBusAddresses.K8S_WORKER_FAULT,
-                                 ctx, capability, eventLogId, t);
+            faultPublisher.fault(ctx, capability, eventLogId, t);
         }
     }
 
@@ -190,7 +185,7 @@ public class K8sWorkerExecutionManager implements WorkerExecutionManager {
             }
         }
 
-        CaseInstance instance = caseInstanceRepository.findByUuid(caseId, tenancyId);
+        CaseInstance instance = caseInstanceRepository.findByUuid(caseId, tenancyId).orElse(null);
         if (instance == null) {
             LOG.warnf("schedulePersistedEvent: CaseInstance %s not found — case closed?", caseId);
             return;

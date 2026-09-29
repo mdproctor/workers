@@ -189,7 +189,7 @@ public class K8sJobInformerManager {
         CaseInstance caseInstance;
         try {
             caseInstance = caseInstanceRepository.findByUuid(
-                UUID.fromString(caseIdStr), tenancyId);
+                UUID.fromString(caseIdStr), tenancyId).orElse(null);
         } catch (Exception e) {
             LOG.warnf("Recovery: failed to load CaseInstance %s: %s", caseIdStr, e.getMessage());
             recoveredDispatchIds.remove(dispatchId);
@@ -228,7 +228,6 @@ public class K8sJobInformerManager {
 
         return Optional.of(new PendingCompletion(
             dispatchId, K8sWorkerConstants.WORKER_TYPE,
-            K8sWorkerEventBusAddresses.K8S_WORKER_FAULT,
             ctx, "", capability, eventLogId,
             Instant.now(), Instant.MAX, provisionerMeta));
     }
